@@ -29,15 +29,22 @@ A free, private, in-browser personal finance tool. Track accounts across **Fidel
   - Disability coverage, umbrella-policy threshold, emergency-fund months, credit-card debt
 - **Backup/restore** — one-click JSON export/import (recommended, since data lives in the browser).
 
-## Free hosting on GitHub Pages
+## Free hosting
 
-The included GitHub Action deploys automatically:
+Since all data is client-side, any static host works. Two supported paths:
+
+**Vercel (recommended)** — builds on Vercel's own infrastructure (no GitHub Actions involved), free Hobby tier for non-commercial use, and room to grow into serverless functions for the multi-user roadmap in `ARCHITECTURE.md`:
+
+1. Go to [vercel.com/new](https://vercel.com/new), sign in with GitHub, and import this repository.
+2. Vercel auto-detects Vite (build `npm run build`, output `dist`) — just click **Deploy**.
+3. Live at `https://<project>.vercel.app` in ~1 minute; every push to `main` redeploys, and every PR gets a preview URL.
+
+**GitHub Pages** — the included workflow (`.github/workflows/deploy.yml`) deploys on push to `main`:
 
 1. In this repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Merge/push this code to the `main` branch.
-3. Your app goes live at `https://<your-username>.github.io/finance/` — free, with HTTPS.
+2. Your app goes live at `https://<your-username>.github.io/finance/`.
 
-Since all data is client-side, static hosting is all it needs. (Netlify/Vercel/Cloudflare Pages free tiers work too: build command `npm run build`, output `dist`.)
+(Netlify and Cloudflare Pages free tiers work too: build command `npm run build`, output `dist`.)
 
 ## Local development
 
