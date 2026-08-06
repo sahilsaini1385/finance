@@ -178,6 +178,17 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
 .cat-bar { height: 14px; background: var(--series-1); border-radius: 0 4px 4px 0; min-width: 2px; }
 .cat-value { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
 
+.badge {
+  font-size: 11px; font-weight: 500; color: var(--text-2);
+  border: 1px solid var(--grid); border-radius: 99px; padding: 2px 8px;
+  vertical-align: middle; margin-left: 6px;
+}
+.advanced { margin-top: 10px; }
+.advanced summary { cursor: pointer; color: var(--text-2); font-size: 13px; }
+.advanced input { width: 100%; margin-top: 6px; }
+.inline-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+.wrap { flex-wrap: wrap; }
+
 .app-footer {
   margin-top: 32px; padding-top: 14px; border-top: 1px solid var(--grid);
   color: var(--muted); font-size: 12px; text-align: center;

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useStore, uid } from '../store.jsx'
 import { parseStatement } from '../lib/csv.js'
 import { categorize } from '../lib/categorize.js'
+import ConnectSimpleFIN from './ConnectSimpleFIN.jsx'
 
 function txHash(accountId, t) {
   return `${accountId}|${t.date}|${t.amount}|${t.description.slice(0, 40)}`
@@ -51,9 +52,10 @@ export default function ImportCSV({ onDone }) {
 
   return (
     <div className="page">
-      <h1>Import bank activity</h1>
+      <h1>Connect &amp; import</h1>
+      <ConnectSimpleFIN />
       <div className="card">
-        <h2>How to export CSVs from your banks</h2>
+        <h2>Manual import — how to export CSVs from your banks</h2>
         <ul className="how-to">
           <li><strong>Chase</strong> — log in → pick the account → the download icon (⬇) above activity → File type <em>Spreadsheet (Excel, CSV)</em> → choose date range → Download.</li>
           <li><strong>Bank of America</strong> — log in → account → <em>Download</em> link above transactions → File type <em>Microsoft Excel format / CSV</em> → Download transactions.</li>

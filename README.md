@@ -6,6 +6,7 @@ A free, private, in-browser personal finance tool. Track accounts across **Fidel
 
 ## Features
 
+- **Automatic bank sync (optional)** — connect Fidelity, Chase, and Bank of America through [SimpleFIN Bridge](https://beta-bridge.simplefin.org/) (~$1.50/mo): paste a setup token once, then one click pulls balances and transactions. Bank credentials stay with the bridge, never in this app. A free one-file Cloudflare Worker proxy (`proxy/cloudflare-worker.js`) handles CORS. See `ARCHITECTURE.md` for the full design and the multi-user scaling path.
 - **Dashboard** — net worth, cash, investments, debt; 6-month cash-flow chart; spending by category; alerts.
 - **Accounts** — checking, savings, credit cards, brokerage, retirement, HSA, 529, loans, mortgages, grouped by institution.
 - **Transaction import** — drop in CSV activity files; the format is auto-detected for:
@@ -51,7 +52,9 @@ Fidelity, Chase, and Bank of America do not offer free personal APIs, and aggreg
 - **Bank of America**: account → *Download* above transactions → CSV/Excel format.
 - **Fidelity**: *Accounts & Trade → Portfolio → Activity & Orders → Download*.
 
-Import takes about a minute per account per month; duplicate rows are detected and skipped, so overlapping date ranges are harmless. If you later want live syncing, [SimpleFIN Bridge](https://beta-bridge.simplefin.org/) (~$1.50/mo) is the cheapest reputable option and could feed the same import pipeline.
+Import takes about a minute per account per month; duplicate rows are detected and skipped, so overlapping date ranges are harmless.
+
+**Prefer automatic sync?** The Connect tab wires up [SimpleFIN Bridge](https://beta-bridge.simplefin.org/) (~$1.50/mo): connect your banks once on their site, generate a setup token, paste it into the app, and sync with one click. Duplicates are skipped using SimpleFIN's stable transaction IDs, so CSV and sync can coexist.
 
 ## Disclaimer
 

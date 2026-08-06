@@ -6,6 +6,9 @@ export const initialState = {
   accounts: [],      // {id, name, institution, type, balance, updated}
   transactions: [],  // {id, accountId, date, description, amount, category, source, hash}
   benefits: [],      // {id, name, type, provider, annualValue, notes, enrolled}
+  connections: {
+    simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
+  },
   insurance: [],     // {id, type, provider, policyName, coverageAmount, premium, premiumFreq, deductible, renewalDate, notes}
   profile: {
     age: '',
@@ -61,6 +64,18 @@ function reducer(state, action) {
       return { ...state, insurance: state.insurance.map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
     case 'DELETE_INSURANCE':
       return { ...state, insurance: state.insurance.filter(p => p.id !== action.payload) }
+    case 'SET_CONNECTION':
+      return { ...state, connections: { ...state.connections, [action.payload.kind]: action.payload.value } }
+    case 'APPLY_SYNC': {
+      const { newAccounts, updatedAccounts, transactions } = action.payload
+      const updates = Object.fromEntries(updatedAccounts.map(u => [u.id, u]))
+      const existingHashes = new Set(state.transactions.map(t => t.hash))
+      return {
+        ...state,
+        accounts: state.accounts.map(a => (updates[a.id] ? { ...a, ...updates[a.id] } : a)).concat(newAccounts),
+        transactions: [...state.transactions, ...transactions.filter(t => !existingHashes.has(t.hash))],
+      }
+    }
     case 'SET_PROFILE':
       return { ...state, profile: { ...state.profile, ...action.payload } }
     case 'RESET':

@@ -12,7 +12,7 @@ const TABS = [
   ['dashboard', 'Dashboard'],
   ['accounts', 'Accounts'],
   ['transactions', 'Transactions'],
-  ['import', 'Import'],
+  ['import', 'Connect'],
   ['benefits', 'Benefits'],
   ['insurance', 'Insurance'],
   ['advisor', 'Advisor'],
