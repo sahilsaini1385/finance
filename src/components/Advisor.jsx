@@ -1,0 +1,140 @@
+import React from 'react'
+import { useStore } from '../store.jsx'
+import { getRecommendations, LIMITS_2026 } from '../lib/advisor.js'
+import Icon from './Icon.jsx'
+
+const SEV_ICON = { critical: 'octagon-alert', warning: 'alert-triangle', info: 'lightbulb', good: 'check-circle' }
+const AREAS = [
+  ['tax', 'Tax management'],
+  ['insurance', 'Insurance coverage'],
+  ['planning', 'Planning & cash'],
+]
+
+const PROFILE_FIELDS = [
+  'age', 'filingStatus', 'grossIncome', 'spouseIncome', 'dependents', 'monthlyExpenses',
+  'mortgageBalance', 'otherDebt', 'educationNeeds', 'k401ContributionPct', 'employerMatchPct',
+  'hsaEligible', 'hsaContribution', 'iraContribution',
+]
+
+function Field({ label, k, profile, onChange, money }) {
+  const input = (
+    <input
+      type="number"
+      inputMode="decimal"
+      value={profile[k]}
+      onChange={e => onChange({ [k]: e.target.value })}
+    />
+  )
+  return (
+    <label>{label}
+      {money ? <span className="input-money">{input}</span> : input}
+    </label>
+  )
+}
+
+export default function Advisor() {
+  const { state, dispatch } = useStore()
+  const p = state.profile
+  const setP = payload => dispatch({ type: 'SET_PROFILE', payload })
+  const recs = getRecommendations(state)
+
+  const answered = PROFILE_FIELDS.filter(k => {
+    const v = p[k]
+    if (k === 'filingStatus') return v && v !== 'single'
+    if (k === 'hsaEligible') return v && v !== 'no'
+    return v !== '' && v !== null && v !== undefined
+  }).length
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h1>Advisor</h1>
+          <p className="muted small">
+            Rules-based guidance computed locally from your data, using {LIMITS_2026.year} IRS limits.{' '}
+            <span className="badge">Educational only</span>
+          </p>
+        </div>
+      </div>
+
+      {AREAS.map(([area, title]) => {
+        const items = recs.filter(r => r.area === area)
+        if (items.length === 0) return null
+        return (
+          <div className="card" key={area}>
+            <h2>{title}</h2>
+            {items.map(r => (
+              <div key={r.id} className={`alert ${r.severity}`}>
+                <span className="alert-icon"><Icon name={SEV_ICON[r.severity]} size={15} /></span>
+                <div>
+                  <strong>{r.title}</strong>
+                  <div className="rec-detail">{r.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })}
+
+      <div className="card">
+        <details className="advanced" open={answered < 7}>
+          <summary>
+            <strong>Your profile</strong> — {answered} of {PROFILE_FIELDS.length} answered · sharper advice as you fill in
+          </summary>
+          <div className="row gap" style={{ margin: '10px 0' }}>
+            <div className="meter"><div className="meter-fill" style={{ width: `${(answered / PROFILE_FIELDS.length) * 100}%` }} /></div>
+          </div>
+          <div className="trust-note" style={{ marginBottom: 12 }}>
+            <Icon name="lock" size={12} /> Stays in your browser.
+          </div>
+          <div className="form-grid">
+            <Field label="Age" k="age" profile={p} onChange={setP} />
+            <label>Filing status
+              <select value={p.filingStatus} onChange={e => setP({ filingStatus: e.target.value })}>
+                <option value="single">Single</option>
+                <option value="mfj">Married filing jointly</option>
+                <option value="hoh">Head of household</option>
+              </select>
+            </label>
+            <Field label="Your gross annual income" k="grossIncome" profile={p} onChange={setP} money />
+            <Field label="Spouse gross income" k="spouseIncome" profile={p} onChange={setP} money />
+            <Field label="Dependents" k="dependents" profile={p} onChange={setP} />
+            <Field label="Monthly living expenses" k="monthlyExpenses" profile={p} onChange={setP} money />
+            <Field label="Mortgage balance" k="mortgageBalance" profile={p} onChange={setP} money />
+            <Field label="Other debt" k="otherDebt" profile={p} onChange={setP} money />
+            <Field label="Future education costs" k="educationNeeds" profile={p} onChange={setP} money />
+            <Field label="Your 401(k) contribution (% of salary)" k="k401ContributionPct" profile={p} onChange={setP} />
+            <Field label="Employer matches up to (%)" k="employerMatchPct" profile={p} onChange={setP} />
+            <label>HDHP / HSA-eligible coverage?
+              <select value={p.hsaEligible} onChange={e => setP({ hsaEligible: e.target.value })}>
+                <option value="no">No</option>
+                <option value="self">Yes — self-only</option>
+                <option value="family">Yes — family</option>
+              </select>
+            </label>
+            <Field label="Planned HSA contribution this year" k="hsaContribution" profile={p} onChange={setP} money />
+            <Field label="Planned IRA contribution this year" k="iraContribution" profile={p} onChange={setP} money />
+          </div>
+        </details>
+      </div>
+
+      <div className="card">
+        <h2>Evergreen best practices</h2>
+        <ul className="best-practices">
+          <li><strong>Order of operations for every dollar:</strong> 401(k) to the full match → high-interest debt → emergency fund (3–6 mo) → max HSA → max IRA (backdoor Roth if over the income limit) → max 401(k) → taxable brokerage in low-cost index funds.</li>
+          <li><strong>Roth vs. traditional:</strong> pay tax now (Roth) if you expect a higher tax rate in retirement or are early-career; defer (traditional) in peak earning years. Splitting is a legitimate hedge.</li>
+          <li><strong>Insurance principle:</strong> insure only catastrophes you cannot self-fund. Raise deductibles to what your emergency fund can absorb and put the premium savings toward coverage limits, not gadgets like extended warranties.</li>
+          <li><strong>Term over whole life:</strong> for income protection, level-term is ~10× cheaper for the same death benefit. Buy coverage while healthy; policies are cheapest in your 20s–30s.</li>
+          <li><strong>Re-shop auto/home every 1–2 years:</strong> loyalty pricing works against you. Bundling and raising deductibles are the two fastest premium cuts.</li>
+          <li><strong>Beneficiaries &amp; basics:</strong> keep beneficiaries current on every account and policy (they override your will), and keep a simple will / power of attorney / healthcare proxy in place.</li>
+          <li><strong>Year-end tax checklist (Oct–Dec):</strong> top up 401(k)/HSA, harvest losses, make charitable gifts (appreciated shares beat cash), take any RMDs, spend down health FSA, and consider Roth conversions in low-income years.</li>
+        </ul>
+      </div>
+
+      <p className="muted small">
+        {LIMITS_2026.year} limits used: 401(k) ${LIMITS_2026.k401.toLocaleString()} · IRA ${LIMITS_2026.ira.toLocaleString()} ·
+        HSA ${LIMITS_2026.hsaSelf.toLocaleString()}/{LIMITS_2026.hsaFamily.toLocaleString()}. Verify at irs.gov; confirm decisions with a CPA or fee-only fiduciary.
+      </p>
+    </div>
+  )
+}
