@@ -7,21 +7,27 @@ import Benefits from './components/Benefits.jsx'
 import Insurance from './components/Insurance.jsx'
 import Advisor from './components/Advisor.jsx'
 import Settings from './components/Settings.jsx'
+import Budget from './components/Budget.jsx'
+import TaxDocs from './components/TaxDocs.jsx'
+import Home from './components/Home.jsx'
 import Icon, { BrandMark } from './components/Icon.jsx'
 import { useStore } from './store.jsx'
 import { getRecommendations } from './lib/advisor.js'
 
 const NAV = [
   { group: null, items: [
-    { id: 'dashboard', label: 'Overview', icon: 'home' },
+    { id: 'dashboard', label: 'Overview', icon: 'layout-dashboard' },
     { id: 'advisor', label: 'Advisor', icon: 'sparkle', badge: true },
   ]},
   { group: 'Money', items: [
     { id: 'accounts', label: 'Accounts', icon: 'landmark' },
     { id: 'transactions', label: 'Transactions', icon: 'list' },
+    { id: 'budget', label: 'Budget', icon: 'pie-chart' },
     { id: 'import', label: 'Add data', icon: 'upload' },
   ]},
   { group: 'Plan', items: [
+    { id: 'home', label: 'Home', icon: 'home' },
+    { id: 'taxes', label: 'Taxes', icon: 'file-text' },
     { id: 'benefits', label: 'Benefits', icon: 'gift' },
     { id: 'insurance', label: 'Insurance', icon: 'shield' },
   ]},
@@ -32,8 +38,17 @@ const NAV = [
 
 const FLAT = NAV.flatMap(g => g.items)
 
+const VALID_TABS = new Set(FLAT.map(i => i.id))
+
 export default function App() {
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTabState] = useState(() => {
+    const h = window.location.hash.slice(1)
+    return VALID_TABS.has(h) ? h : 'dashboard'
+  })
+  const setTab = id => {
+    setTabState(id)
+    window.history.replaceState(null, '', id === 'dashboard' ? '#' : `#${id}`)
+  }
   const { state } = useStore()
   const attention = getRecommendations(state).filter(
     r => r.severity === 'critical' || r.severity === 'warning',
@@ -90,7 +105,10 @@ export default function App() {
           {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
           {tab === 'accounts' && <Accounts />}
           {tab === 'transactions' && <Transactions />}
+          {tab === 'budget' && <Budget />}
           {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}
+          {tab === 'home' && <Home />}
+          {tab === 'taxes' && <TaxDocs />}
           {tab === 'benefits' && <Benefits />}
           {tab === 'insurance' && <Insurance />}
           {tab === 'advisor' && <Advisor />}

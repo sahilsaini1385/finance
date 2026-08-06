@@ -9,6 +9,19 @@ export const initialState = {
   connections: {
     simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
   },
+  documents: [],     // {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?, notes}
+  homeBills: [],     // {id, month: 'YYYY-MM', type, amount, hasFile, note}
+  budgets: {},       // {category: monthlyAmount}
+  home: {
+    nickname: '',
+    purchasePrice: '',
+    currentValue: '',
+    mortgageBalance: '',
+    mortgageRate: '',
+    monthlyPayment: '',
+    propertyTaxAnnual: '',
+    insuranceAnnual: '',
+  },
   insurance: [],     // {id, type, provider, policyName, coverageAmount, premium, premiumFreq, deductible, renewalDate, notes}
   profile: {
     age: '',
@@ -32,7 +45,12 @@ export const initialState = {
 function reducer(state, action) {
   switch (action.type) {
     case 'HYDRATE':
-      return { ...initialState, ...action.payload, profile: { ...initialState.profile, ...(action.payload.profile || {}) } }
+      return {
+        ...initialState,
+        ...action.payload,
+        profile: { ...initialState.profile, ...(action.payload.profile || {}) },
+        home: { ...initialState.home, ...(action.payload.home || {}) },
+      }
     case 'ADD_ACCOUNT':
       return { ...state, accounts: [...state.accounts, action.payload] }
     case 'UPDATE_ACCOUNT':
@@ -64,6 +82,25 @@ function reducer(state, action) {
       return { ...state, insurance: state.insurance.map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
     case 'DELETE_INSURANCE':
       return { ...state, insurance: state.insurance.filter(p => p.id !== action.payload) }
+    case 'ADD_DOCUMENT':
+      return { ...state, documents: [...state.documents, action.payload] }
+    case 'UPDATE_DOCUMENT':
+      return { ...state, documents: state.documents.map(d => (d.id === action.payload.id ? { ...d, ...action.payload } : d)) }
+    case 'DELETE_DOCUMENT':
+      return { ...state, documents: state.documents.filter(d => d.id !== action.payload) }
+    case 'ADD_HOME_BILL':
+      return { ...state, homeBills: [...state.homeBills, action.payload] }
+    case 'DELETE_HOME_BILL':
+      return { ...state, homeBills: state.homeBills.filter(b => b.id !== action.payload) }
+    case 'SET_BUDGET': {
+      const budgets = { ...state.budgets }
+      const amount = parseFloat(action.payload.amount)
+      if (Number.isNaN(amount) || amount <= 0) delete budgets[action.payload.category]
+      else budgets[action.payload.category] = amount
+      return { ...state, budgets }
+    }
+    case 'SET_HOME':
+      return { ...state, home: { ...state.home, ...action.payload } }
     case 'SET_CONNECTION':
       return { ...state, connections: { ...state.connections, [action.payload.kind]: action.payload.value } }
     case 'APPLY_SYNC': {

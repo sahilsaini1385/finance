@@ -14,6 +14,45 @@ export const LIMITS_2026 = {
   standardDeduction: { single: 16100, mfj: 32200, hoh: 24150 },
 }
 
+// 2026 marginal brackets on TAXABLE income (rough-estimate use only).
+export const TAX_BRACKETS_2026 = {
+  single: [[0, 0.10], [12400, 0.12], [50400, 0.22], [105700, 0.24], [201775, 0.32], [256225, 0.35], [640600, 0.37]],
+  mfj: [[0, 0.10], [24800, 0.12], [100800, 0.22], [211400, 0.24], [403550, 0.32], [512450, 0.35], [768700, 0.37]],
+  hoh: [[0, 0.10], [17700, 0.12], [67450, 0.22], [105700, 0.24], [201750, 0.32], [256200, 0.35], [640600, 0.37]],
+}
+
+export function estimateFederalTax(grossWages, filingStatus) {
+  const L = LIMITS_2026
+  const sd = L.standardDeduction[filingStatus] || L.standardDeduction.single
+  const taxable = Math.max(0, grossWages - sd)
+  const brackets = TAX_BRACKETS_2026[filingStatus] || TAX_BRACKETS_2026.single
+  let tax = 0
+  for (let i = 0; i < brackets.length; i++) {
+    const [floor, rate] = brackets[i]
+    const ceil = i + 1 < brackets.length ? brackets[i + 1][0] : Infinity
+    if (taxable <= floor) break
+    tax += (Math.min(taxable, ceil) - floor) * rate
+  }
+  return { taxable, tax: Math.round(tax) }
+}
+
+// Aggregates key figures across W-2 documents for the most recent tax year that has them.
+export function w2Summary(state) {
+  const w2s = (state.documents || []).filter(d => d.kind === 'W-2' && d.fields)
+  if (w2s.length === 0) return null
+  const year = w2s.map(d => d.year).sort().reverse()[0]
+  const docs = w2s.filter(d => d.year === year)
+  const sum = key => docs.reduce((s, d) => s + (parseFloat(d.fields?.[key]) || 0), 0)
+  return {
+    year,
+    count: docs.length,
+    wages: sum('wages'),
+    fedWithholding: sum('fedWithholding'),
+    k401: sum('k401'),
+    hsa: sum('hsa'),
+  }
+}
+
 const num = v => {
   const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
   return Number.isNaN(n) ? 0 : n
@@ -98,6 +137,48 @@ export function getRecommendations(state) {
   push('tax', 'info', `Standard deduction for ${L.year}: $${sd.toLocaleString()} (${p.filingStatus.toUpperCase()})`,
     'Itemize only if mortgage interest + state/local taxes (capped) + charitable gifts exceed this. If you\'re close to the line, "bunch" two years of charitable giving into one year (a donor-advised fund makes this easy) and take the standard deduction the other year.')
 
+  // W-2 document review
+  const w2 = w2Summary(state)
+  if (w2 && w2.wages > 0) {
+    const { tax } = estimateFederalTax(w2.wages, p.filingStatus)
+    const diff = Math.round(w2.fedWithholding - tax)
+    if (Math.abs(diff) > 1000) {
+      push('tax', diff < 0 ? 'warning' : 'info',
+        diff < 0
+          ? `Your ${w2.year} W-2${w2.count > 1 ? 's' : ''} suggest under-withholding (~$${Math.abs(diff).toLocaleString()} owed)`
+          : `Your ${w2.year} W-2${w2.count > 1 ? 's' : ''} suggest a large refund (~$${diff.toLocaleString()})`,
+        `Rough estimate from Box 1 wages ($${Math.round(w2.wages).toLocaleString()}) with the standard deduction: federal tax ≈ $${tax.toLocaleString()} vs. $${Math.round(w2.fedWithholding).toLocaleString()} withheld (Box 2). ${diff < 0 ? 'Owing at filing can also mean underpayment penalties — adjust your W-4 or make estimated payments.' : 'A big refund is an interest-free loan to the IRS — adjust your W-4 to keep that money in your paycheck (and invested) during the year.'} Estimate ignores credits, other income, and itemizing — verify with real filing software or a CPA.`)
+    } else {
+      push('tax', 'good', `Withholding on your ${w2.year} W-2 looks well-calibrated`,
+        `Estimated federal tax ≈ $${tax.toLocaleString()} vs. $${Math.round(w2.fedWithholding).toLocaleString()} withheld — within $1,000. Nice.`)
+    }
+    if (w2.k401 > 0) {
+      const k401Limit = L.k401 + (age >= 50 ? L.k401CatchUp : 0)
+      if (w2.k401 < k401Limit * 0.9) {
+        push('tax', 'info', `W-2 Box 12 shows $${Math.round(w2.k401).toLocaleString()} of 401(k) deferrals in ${w2.year}`,
+          `That left ~$${Math.round(k401Limit - w2.k401).toLocaleString()} of the $${k401Limit.toLocaleString()} employee limit unused (today's limit shown). If cash flow allows, raise your deferral percentage for this year.`)
+      }
+    }
+  }
+
+  // Home / mortgage documents context
+  const home = state.home || {}
+  const mortBalance = num(home.mortgageBalance)
+  const mortRate = num(home.mortgageRate)
+  if (mortBalance > 0 && mortRate > 0) {
+    const annualInterest = Math.round(mortBalance * (mortRate / 100))
+    const propTax = num(home.propertyTaxAnnual)
+    const sdHome = L.standardDeduction[p.filingStatus] || L.standardDeduction.single
+    const itemizable = annualInterest + propTax
+    if (itemizable > sdHome) {
+      push('tax', 'warning', `Itemizing may beat the standard deduction (~$${itemizable.toLocaleString()} vs $${sdHome.toLocaleString()})`,
+        `Estimated mortgage interest (~$${annualInterest.toLocaleString()} at ${mortRate}% on $${mortBalance.toLocaleString()}) plus property tax ($${propTax.toLocaleString()}) exceeds your standard deduction — before even counting state income tax and charitable gifts. Check Schedule A at filing time; keep your Form 1098 in the Taxes section.`)
+    } else if (itemizable > sdHome * 0.75) {
+      push('tax', 'info', 'Close to the itemizing line',
+        `Mortgage interest + property tax ≈ $${itemizable.toLocaleString()} vs. a $${sdHome.toLocaleString()} standard deduction. Bunching charitable gifts into one year could push you over in alternating years.`)
+    }
+  }
+
   const hasBrokerage = state.accounts.some(a => a.type === 'brokerage')
   if (hasBrokerage) {
     push('tax', 'info', 'Tax-loss harvesting & asset location',
@@ -164,6 +245,43 @@ export function getRecommendations(state) {
     } else {
       push('planning', 'info', `${months.toFixed(1)} months of cash — possibly too much`,
         'Beyond ~6–12 months of expenses, cash loses to inflation. Consider moving the excess into investments aligned with your goals.')
+    }
+  }
+
+  // Budget overruns — current month
+  const budgets = state.budgets || {}
+  if (Object.keys(budgets).length > 0) {
+    const thisMonth = new Date().toISOString().slice(0, 7)
+    const spent = {}
+    for (const t of state.transactions) {
+      if (!t.date?.startsWith(thisMonth) || t.amount >= 0) continue
+      spent[t.category] = (spent[t.category] || 0) + -t.amount
+    }
+    const over = Object.entries(budgets)
+      .map(([cat, b]) => [cat, (spent[cat] || 0) - b])
+      .filter(([, d]) => d > 0)
+      .sort((a, b) => b[1] - a[1])
+    if (over.length > 0) {
+      push('planning', 'warning', `Over budget in ${over.length} categor${over.length === 1 ? 'y' : 'ies'} this month`,
+        over.slice(0, 3).map(([cat, d]) => `${cat} is $${Math.round(d).toLocaleString()} over`).join(' · ') +
+        `${over.length > 3 ? ` · +${over.length - 3} more` : ''}. See the Budget tab for the full picture.`)
+    }
+  }
+
+  // Utility-bill creep
+  const bills = state.homeBills || []
+  if (bills.length >= 4) {
+    const byMonth = {}
+    for (const b of bills) byMonth[b.month] = (byMonth[b.month] || 0) + num(b.amount)
+    const monthsSorted = Object.keys(byMonth).sort()
+    const latest = monthsSorted[monthsSorted.length - 1]
+    const prior = monthsSorted.slice(-4, -1)
+    if (prior.length >= 2) {
+      const avg = prior.reduce((s, m) => s + byMonth[m], 0) / prior.length
+      if (byMonth[latest] > avg * 1.25) {
+        push('planning', 'info', `Home bills for ${latest} are ${Math.round(((byMonth[latest] - avg) / avg) * 100)}% above your recent average`,
+          `$${Math.round(byMonth[latest]).toLocaleString()} vs. a ~$${Math.round(avg).toLocaleString()} average over the prior ${prior.length} months. Worth a look — rate hikes, seasonal usage, or a billing error.`)
+      }
     }
   }
 

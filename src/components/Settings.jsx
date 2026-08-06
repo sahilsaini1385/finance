@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { useStore, initialState } from '../store.jsx'
+import { wipeAllFiles } from '../lib/files.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -49,15 +50,16 @@ export default function Settings() {
     e.target.value = ''
   }
 
-  const eraseAll = () => {
+  const eraseAll = async () => {
     if (!armed) {
       setArmed(true)
       setTimeout(() => setArmed(false), 3000)
       return
     }
     dispatch({ type: 'RESET' })
+    await wipeAllFiles()
     setArmed(false)
-    toast('All data erased')
+    toast('All data and documents erased')
   }
 
   return (
@@ -78,9 +80,11 @@ export default function Settings() {
       <div className="card">
         <h2>Where your data lives</h2>
         <p className="small">
-          Everything is stored in this browser's <code>localStorage</code> — it never touches a server, which is
-          what keeps this tool free and private. The trade-off: clearing browser data erases it, and it doesn't
-          sync between devices. Export a backup regularly.
+          Everything is stored in this browser — figures and settings in <code>localStorage</code>, uploaded
+          documents (W-2s, mortgage paperwork, bills) in IndexedDB. Nothing touches a server, which is what keeps
+          this tool free and private. The trade-offs: clearing browser data erases it, it doesn't sync between
+          devices, and <strong>document files are not included in the JSON backup</strong> — keep originals safe
+          elsewhere. Export a backup regularly.
         </p>
         <button className="btn" onClick={exportData}><Icon name="upload" size={14} /> Export backup</button>
       </div>

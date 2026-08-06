@@ -16,6 +16,9 @@ A free, private, in-browser personal finance tool. Track accounts across **Fidel
   - Any generic `Date, Description, Amount` CSV
 
   Transactions are auto-categorized (editable), and duplicates are skipped on re-import.
+- **Monthly budget tracker** — set a monthly amount per category; actuals fill in from synced/imported transactions with progress bars, over-budget alerts, and a month-by-month view.
+- **Taxes section** — store W-2s, 1099s, 1098s and returns (in-browser IndexedDB, never uploaded). Enter key W-2 boxes and the Advisor estimates your refund/balance due and reviews 401(k)/HSA deferrals against IRS limits.
+- **Home section** — property & mortgage details (equity, LTV, monthly carrying cost), a vault for mortgage paperwork, and a monthly home-bills log (electric, gas, water…) with trend chart; the Advisor uses mortgage figures for itemizing checks and flags unusual bill jumps.
 - **Benefits tracker** — 401(k)/match, HSA/FSA, ESPP, RSUs, health/dental/vision, and more, with estimated annual value and enrollment status.
 - **Insurance tracker** — every policy with coverage, premium, deductible, and renewal date (renewals within 45 days trigger a re-shop reminder).
 - **Advisor** — a rules engine using current-year IRS limits that checks, from *your* data:

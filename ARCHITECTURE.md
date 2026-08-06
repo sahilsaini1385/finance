@@ -53,7 +53,15 @@ benefits[]      {id, name, type, provider, annualValue, enrolled, notes}
 insurance[]     {id, type, provider, policyName, coverageAmount, premium, premiumFreq, deductible, renewalDate, notes}
 connections     {simplefin: {accessUrl, connectedAt, lastSync, proxyUrl} | null}
 profile         {age, filingStatus, incomes, expenses, debts, contribution settings…}
+documents[]     {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?}
+homeBills[]     {id, month, type, amount, hasFile}
+budgets         {category: monthlyAmount}
+home            {purchasePrice, currentValue, mortgageBalance, mortgageRate, payments, tax, insurance}
 ```
+
+Uploaded document **blobs** live in IndexedDB (`finance-files` DB), keyed by document id —
+localStorage is too small for PDFs. Metadata stays in the main JSON document. Blobs are excluded
+from the JSON backup; the UI says so wherever files are uploaded.
 
 Idempotency: every transaction carries a `hash` (`sf|<sfAccountId>|<txId>` for SimpleFIN,
 `<accountId>|date|amount|desc` for CSV). All ingest paths dedupe on it, so re-syncs and re-imports are safe.
