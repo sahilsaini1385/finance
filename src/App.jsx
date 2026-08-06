@@ -7,49 +7,100 @@ import Benefits from './components/Benefits.jsx'
 import Insurance from './components/Insurance.jsx'
 import Advisor from './components/Advisor.jsx'
 import Settings from './components/Settings.jsx'
+import Icon, { BrandMark } from './components/Icon.jsx'
+import { useStore } from './store.jsx'
+import { getRecommendations } from './lib/advisor.js'
 
-const TABS = [
-  ['dashboard', 'Dashboard'],
-  ['accounts', 'Accounts'],
-  ['transactions', 'Transactions'],
-  ['import', 'Connect'],
-  ['benefits', 'Benefits'],
-  ['insurance', 'Insurance'],
-  ['advisor', 'Advisor'],
-  ['settings', 'Settings'],
+const NAV = [
+  { group: null, items: [
+    { id: 'dashboard', label: 'Overview', icon: 'home' },
+    { id: 'advisor', label: 'Advisor', icon: 'sparkle', badge: true },
+  ]},
+  { group: 'Money', items: [
+    { id: 'accounts', label: 'Accounts', icon: 'landmark' },
+    { id: 'transactions', label: 'Transactions', icon: 'list' },
+    { id: 'import', label: 'Add data', icon: 'upload' },
+  ]},
+  { group: 'Plan', items: [
+    { id: 'benefits', label: 'Benefits', icon: 'gift' },
+    { id: 'insurance', label: 'Insurance', icon: 'shield' },
+  ]},
+  { group: null, items: [
+    { id: 'settings', label: 'Settings', icon: 'settings' },
+  ]},
 ]
+
+const FLAT = NAV.flatMap(g => g.items)
 
 export default function App() {
   const [tab, setTab] = useState('dashboard')
+  const { state } = useStore()
+  const attention = getRecommendations(state).filter(
+    r => r.severity === 'critical' || r.severity === 'warning',
+  ).length
+
   return (
     <div className="app">
-      <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark">💰</span>
+      <aside className="sidebar">
+        <div className="brand-row">
+          <BrandMark size={24} />
           <span className="brand-name">Finance</span>
-          <span className="brand-tag">private · in-browser · free</span>
         </div>
-        <nav className="tabs" aria-label="Sections">
-          {TABS.map(([id, label]) => (
-            <button key={id} className={tab === id ? 'tab active' : 'tab'} onClick={() => setTab(id)}>
-              {label}
-            </button>
-          ))}
-        </nav>
-      </header>
-      <main className="content">
-        {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
-        {tab === 'accounts' && <Accounts />}
-        {tab === 'transactions' && <Transactions />}
-        {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}
-        {tab === 'benefits' && <Benefits />}
-        {tab === 'insurance' && <Insurance />}
-        {tab === 'advisor' && <Advisor />}
-        {tab === 'settings' && <Settings />}
-      </main>
-      <footer className="app-footer">
-        Your data never leaves this browser. Guidance is educational, not professional tax/legal/investment advice.
-      </footer>
+        {NAV.map((g, gi) => (
+          <React.Fragment key={gi}>
+            {g.group && <div className="nav-group-label">{g.group}</div>}
+            {g.items.map(item => (
+              <button
+                key={item.id}
+                className={tab === item.id ? 'nav-item active' : 'nav-item'}
+                aria-current={tab === item.id ? 'page' : undefined}
+                onClick={() => setTab(item.id)}
+              >
+                <Icon name={item.icon} />
+                {item.label}
+                {item.badge && attention > 0 && <span className="nav-badge">{attention}</span>}
+              </button>
+            ))}
+          </React.Fragment>
+        ))}
+        <div className="trust-pill">
+          <Icon name="lock" size={12} />
+          Local-only · nothing leaves this device
+        </div>
+      </aside>
+
+      <div className="main-col">
+        <div className="mobile-header">
+          <BrandMark size={22} />
+          <nav className="tabs" aria-label="Sections">
+            {FLAT.map(item => (
+              <button
+                key={item.id}
+                data-label={item.label}
+                className={tab === item.id ? 'tab active' : 'tab'}
+                onClick={() => setTab(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <main className="content">
+          {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
+          {tab === 'accounts' && <Accounts />}
+          {tab === 'transactions' && <Transactions />}
+          {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}
+          {tab === 'benefits' && <Benefits />}
+          {tab === 'insurance' && <Insurance />}
+          {tab === 'advisor' && <Advisor />}
+          {tab === 'settings' && <Settings />}
+        </main>
+
+        <footer className="app-footer">
+          Guidance is educational, not professional tax, legal, or investment advice.
+        </footer>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { computeTotals, getRecommendations } from '../lib/advisor.js'
+import Icon from './Icon.jsx'
 
 function monthKey(dateStr) {
   return dateStr ? dateStr.slice(0, 7) : ''
@@ -17,11 +18,41 @@ function lastNMonths(n) {
   return out
 }
 
+function useCountUp(target, duration = 600) {
+  const [value, setValue] = useState(target)
+  const prev = useRef(target)
+  useEffect(() => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduced || prev.current === target) {
+      prev.current = target
+      setValue(target)
+      return
+    }
+    const from = prev.current
+    prev.current = target
+    const start = performance.now()
+    let raf
+    const step = now => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setValue(from + (target - from) * eased)
+      if (t < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return value
+}
+
+const GHOST_FLOW = [0.55, 0.4, 0.7, 0.5, 0.85, 0.6]
+const GHOST_CATS = [0.9, 0.65, 0.5, 0.35, 0.2]
+
 export default function Dashboard({ onNavigate }) {
   const { state } = useStore()
   const totals = computeTotals(state)
-  const [hoverCat, setHoverCat] = useState(null)
   const [hoverMonth, setHoverMonth] = useState(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   const months = useMemo(() => lastNMonths(6), [])
   const flows = useMemo(() => {
@@ -47,65 +78,112 @@ export default function Dashboard({ onNavigate }) {
   }, [state.transactions, thisMonth])
 
   const recs = getRecommendations(state)
-  const alerts = recs.filter(r => r.severity === 'critical' || r.severity === 'warning').slice(0, 3)
+  const alerts = recs.filter(r => r.severity === 'critical' || r.severity === 'warning')
 
   const maxFlow = Math.max(1, ...months.map(k => Math.max(flows[k].income, flows[k].expense)))
   const maxCat = Math.max(1, ...spendByCat.map(([, v]) => v))
-  const empty = state.accounts.length === 0 && state.transactions.length === 0
+  const hasTx = state.transactions.length > 0
+  const hasAccounts = state.accounts.length > 0
+
+  const netFlow = flows[thisMonth] ? flows[thisMonth].income - flows[thisMonth].expense : 0
+
+  const p = state.profile
+  const steps = [
+    { label: 'Add an account', done: hasAccounts, cta: 'Accounts', nav: 'accounts' },
+    { label: 'Bring in transactions', done: hasTx, cta: 'Add data', nav: 'import' },
+    { label: 'Add insurance & benefits', done: state.insurance.length + state.benefits.length > 0, cta: 'Insurance', nav: 'insurance' },
+    { label: 'Answer the Advisor profile', done: Boolean(p.age && p.grossIncome), cta: 'Advisor', nav: 'advisor' },
+  ]
+  const doneCount = steps.filter(s => s.done).length
+
+  const heroValue = useCountUp(totals.netWorth)
+  const cash = useCountUp(totals.cash)
+  const invest = useCountUp(totals.investments)
+  const debt = useCountUp(totals.debt)
+
+  const accountCount = type => state.accounts.filter(a => type.includes(a.type)).length
+
+  const monthLabel = k => new Date(k + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })
 
   return (
     <div className="page">
-      <h1>Dashboard</h1>
+      <h1>Overview</h1>
 
-      {empty && (
-        <div className="card welcome">
-          <h2>Welcome 👋</h2>
-          <p>This is your private, in-browser finance hub. Nothing you enter leaves this device.</p>
-          <ol>
-            <li><strong>Add accounts</strong> — your Fidelity, Chase, and Bank of America accounts with current balances.</li>
-            <li><strong>Import transactions</strong> — download CSV activity from each bank's website and drop it in the Import tab. Formats are auto-detected.</li>
-            <li><strong>Log benefits &amp; insurance</strong> — 401(k) match, HSA, policies and renewal dates.</li>
-            <li><strong>Open the Advisor</strong> — fill in your profile to get tax and insurance-coverage guidance.</li>
-          </ol>
-          <div className="row gap">
-            <button className="btn primary" onClick={() => onNavigate('accounts')}>Add first account</button>
-            <button className="btn" onClick={() => onNavigate('import')}>Import a CSV</button>
+      {doneCount < 4 && (
+        <div className="card">
+          <h2>
+            Set up in ~3 minutes
+            <span className="badge">{doneCount} of 4</span>
+          </h2>
+          {steps.map(s => (
+            <div key={s.label} className={s.done ? 'checklist-step done' : 'checklist-step'}>
+              <span className={s.done ? 'step-dot done' : 'step-dot'}>
+                {s.done && <Icon name="check" size={12} />}
+              </span>
+              <span className="step-text">{s.label}</span>
+              {!s.done && (
+                <button className="btn small" onClick={() => onNavigate(s.nav)}>
+                  {s.cta} →
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="progress-segments" aria-hidden>
+            {steps.map((s, i) => <i key={i} className={s.done ? 'on' : ''} />)}
           </div>
         </div>
       )}
 
+      <div className="card hero-card">
+        <div className="eyebrow">Net worth</div>
+        <div className="hero-value money">
+          {hasAccounts ? fmt(Math.round(heroValue)) : '—'}
+          {hasTx && netFlow !== 0 && (
+            <span className={netFlow >= 0 ? 'delta-chip' : 'delta-chip down'}>
+              <Icon name={netFlow >= 0 ? 'arrow-up-right' : 'arrow-down-right'} size={12} />
+              {netFlow >= 0 ? '+' : '−'}{fmt(Math.abs(Math.round(netFlow)))} this month
+            </span>
+          )}
+        </div>
+        {!hasAccounts && <div className="hero-sub">Add an account to start</div>}
+      </div>
+
       <div className="stat-row">
-        <div className="stat-tile">
-          <div className="stat-label">Net worth</div>
-          <div className="stat-value">{fmt(totals.netWorth)}</div>
-        </div>
-        <div className="stat-tile">
+        <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
+          onKeyDown={e => e.key === 'Enter' && onNavigate('accounts')}>
           <div className="stat-label">Cash</div>
-          <div className="stat-value">{fmt(totals.cash)}</div>
+          <div className="stat-value money">{hasAccounts ? fmt(Math.round(cash)) : '—'}</div>
+          <div className="stat-sub">{accountCount(['checking', 'savings'])} accounts</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
+          onKeyDown={e => e.key === 'Enter' && onNavigate('accounts')}>
           <div className="stat-label">Investments</div>
-          <div className="stat-value">{fmt(totals.investments)}</div>
+          <div className="stat-value money">{hasAccounts ? fmt(Math.round(invest)) : '—'}</div>
+          <div className="stat-sub">{accountCount(['brokerage', 'retirement', 'hsa', '529'])} accounts</div>
         </div>
-        <div className="stat-tile">
+        <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
+          onKeyDown={e => e.key === 'Enter' && onNavigate('accounts')}>
           <div className="stat-label">Debt</div>
-          <div className="stat-value">{fmt(totals.debt)}</div>
+          <div className="stat-value money">{hasAccounts ? (totals.debt > 0 ? '−' + fmt(Math.round(debt)) : fmt(0)) : '—'}</div>
+          <div className="stat-sub">{accountCount(['credit card', 'loan', 'mortgage'])} accounts</div>
         </div>
       </div>
 
       {alerts.length > 0 && (
         <div className="card">
-          <h2>Needs attention</h2>
-          {alerts.map(r => (
+          <h2>Needs attention ({alerts.length})</h2>
+          {alerts.slice(0, 2).map(r => (
             <div key={r.id} className={`alert ${r.severity}`}>
-              <span className="alert-icon" aria-hidden>{r.severity === 'critical' ? '⛔' : '⚠️'}</span>
+              <span className={`sev-chip ${r.severity}`}>
+                <Icon name={r.severity === 'critical' ? 'octagon-alert' : 'alert-triangle'} size={14} />
+              </span>
               <div>
                 <strong>{r.title}</strong>
-                <div className="muted small">{r.detail.slice(0, 160)}{r.detail.length > 160 ? '…' : ''}</div>
+                <div className="rec-detail">{r.detail.slice(0, 140)}{r.detail.length > 140 ? '…' : ''}</div>
               </div>
             </div>
           ))}
-          <button className="btn link" onClick={() => onNavigate('advisor')}>See all recommendations →</button>
+          <button className="btn link" onClick={() => onNavigate('advisor')}>Review all in Advisor →</button>
         </div>
       )}
 
@@ -116,51 +194,78 @@ export default function Dashboard({ onNavigate }) {
             <span><i className="swatch s1" /> Income</span>
             <span><i className="swatch s2" /> Spending</span>
           </div>
-          <div className="flow-chart" role="img" aria-label="Monthly income and spending bars">
-            {months.map(k => (
-              <div
-                key={k}
-                className="flow-month"
-                onMouseEnter={() => setHoverMonth(k)}
-                onMouseLeave={() => setHoverMonth(null)}
-              >
-                {hoverMonth === k && (
-                  <div className="tooltip">
-                    <strong>{k}</strong>
-                    <div>In: {fmt(flows[k].income)}</div>
-                    <div>Out: {fmt(flows[k].expense)}</div>
+          {hasTx ? (
+            <div className="flow-chart" role="img" aria-label="Monthly income and spending bars">
+              {months.map(k => (
+                <div
+                  key={k}
+                  className="flow-month"
+                  onMouseEnter={() => setHoverMonth(k)}
+                  onMouseLeave={() => setHoverMonth(null)}
+                >
+                  {hoverMonth === k && (
+                    <div className="tooltip">
+                      <strong>{monthLabel(k)}</strong>
+                      <div className="tip-row"><span><i className="dot" style={{ background: 'var(--series-1)' }} /> In</span><span className="num">{fmt(flows[k].income)}</span></div>
+                      <div className="tip-row"><span><i className="dot" style={{ background: 'var(--series-2)' }} /> Out</span><span className="num">{fmt(flows[k].expense)}</span></div>
+                    </div>
+                  )}
+                  <div className="flow-bars">
+                    <div className="bar income" style={{ height: mounted ? `${(flows[k].income / maxFlow) * 100}%` : 0 }} />
+                    <div className="bar expense" style={{ height: mounted ? `${(flows[k].expense / maxFlow) * 100}%` : 0 }} />
                   </div>
-                )}
-                <div className="flow-bars">
-                  <div className="bar income" style={{ height: `${(flows[k].income / maxFlow) * 100}%` }} />
-                  <div className="bar expense" style={{ height: `${(flows[k].expense / maxFlow) * 100}%` }} />
+                  <div className="flow-label">{monthLabel(k).split(' ')[0]}</div>
                 </div>
-                <div className="flow-label">{k.slice(5)}</div>
+              ))}
+            </div>
+          ) : (
+            <div className="ghost-wrap">
+              <div className="flow-chart ghost-chart">
+                {GHOST_FLOW.map((h, i) => (
+                  <div key={i} className="flow-month">
+                    <div className="flow-bars">
+                      <div className="bar income" style={{ height: `${h * 100}%` }} />
+                      <div className="bar expense" style={{ height: `${h * 70}%` }} />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          {state.transactions.length === 0 && <p className="muted">Import transactions to see cash flow.</p>}
+              <div className="ghost-overlay">
+                Sample — bring in transactions to see yours
+                <button className="btn small" onClick={() => onNavigate('import')}>Add data</button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="card">
-          <h2>Spending by category — this month</h2>
-          {spendByCat.length === 0 && <p className="muted">No spending recorded this month yet.</p>}
-          <div className="cat-chart">
-            {spendByCat.map(([cat, v]) => (
-              <div
-                key={cat}
-                className="cat-row"
-                onMouseEnter={() => setHoverCat(cat)}
-                onMouseLeave={() => setHoverCat(null)}
-              >
-                <span className="cat-name">{cat}</span>
-                <div className="cat-track">
-                  <div className="cat-bar" style={{ width: `${(v / maxCat) * 100}%` }} />
+          <h2>Spending — this month</h2>
+          {spendByCat.length > 0 ? (
+            <div className="cat-chart">
+              {spendByCat.map(([cat, v]) => (
+                <div key={cat} className="cat-row">
+                  <span className="cat-name">{cat}</span>
+                  <div className="cat-track">
+                    <div className="cat-bar" style={{ width: mounted ? `${(v / maxCat) * 100}%` : 0 }} />
+                  </div>
+                  <span className="cat-value" title={fmt(v, { maximumFractionDigits: 2 })}>{fmt(v)}</span>
                 </div>
-                <span className="cat-value">{hoverCat === cat ? fmt(v, { maximumFractionDigits: 2 }) : fmt(v)}</span>
+              ))}
+            </div>
+          ) : (
+            <div className="ghost-wrap">
+              <div className="cat-chart ghost-chart">
+                {GHOST_CATS.map((w, i) => (
+                  <div key={i} className="cat-row">
+                    <span className="cat-name">·····</span>
+                    <div className="cat-track"><div className="cat-bar" style={{ width: `${w * 100}%` }} /></div>
+                    <span className="cat-value">—</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              <div className="ghost-overlay">No spending recorded this month yet</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -169,16 +274,16 @@ export default function Dashboard({ onNavigate }) {
           <h2>Insurance snapshot</h2>
           <table className="table">
             <thead>
-              <tr><th>Type</th><th>Provider</th><th>Coverage</th><th>Premium</th><th>Renews</th></tr>
+              <tr><th>Type</th><th>Provider</th><th className="num">Coverage</th><th className="num">Premium</th><th>Renews</th></tr>
             </thead>
             <tbody>
-              {state.insurance.map(p => (
-                <tr key={p.id}>
-                  <td>{p.type}</td>
-                  <td>{p.provider}</td>
-                  <td>{fmt(p.coverageAmount)}</td>
-                  <td>{fmt(p.premium)} / {p.premiumFreq}</td>
-                  <td>{p.renewalDate || '—'}</td>
+              {state.insurance.map(pol => (
+                <tr key={pol.id}>
+                  <td>{pol.type}</td>
+                  <td>{pol.provider}</td>
+                  <td className="num">{fmt(pol.coverageAmount)}</td>
+                  <td className="num">{fmt(pol.premium)} / {pol.premiumFreq}</td>
+                  <td>{pol.renewalDate || '—'}</td>
                 </tr>
               ))}
             </tbody>

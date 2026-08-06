@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
+import Icon from './Icon.jsx'
+import { useToast } from './Toaster.jsx'
 
 const POLICY_TYPES = ['health', 'dental', 'vision', 'life', 'disability', 'auto', 'home', 'renters', 'umbrella', 'pet', 'other']
 const FREQS = ['month', 'year']
@@ -11,8 +13,11 @@ const blank = {
 
 export default function Insurance() {
   const { state, dispatch } = useStore()
+  const toast = useToast()
   const [form, setForm] = useState(blank)
   const [editingId, setEditingId] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [armedId, setArmedId] = useState(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const submit = e => {
@@ -21,10 +26,24 @@ export default function Insurance() {
     if (editingId) {
       dispatch({ type: 'UPDATE_INSURANCE', payload: { ...form, id: editingId } })
       setEditingId(null)
+      toast('Policy updated', { kind: 'good' })
     } else {
       dispatch({ type: 'ADD_INSURANCE', payload: { ...form, id: uid() } })
+      toast('Policy added', { kind: 'good' })
     }
     setForm(blank)
+    setShowForm(false)
+  }
+
+  const remove = p => {
+    if (armedId !== p.id) {
+      setArmedId(p.id)
+      setTimeout(() => setArmedId(cur => (cur === p.id ? null : cur)), 3000)
+      return
+    }
+    dispatch({ type: 'DELETE_INSURANCE', payload: p.id })
+    setArmedId(null)
+    toast('Policy deleted')
   }
 
   const annualPremiums = state.insurance.reduce((s, p) => {
@@ -34,51 +53,74 @@ export default function Insurance() {
 
   return (
     <div className="page">
-      <h1>Insurance</h1>
-      <p className="muted">
-        All policies in one place — coverage, premiums, deductibles, renewal dates. Total annual premiums:{' '}
-        <strong>{fmt(annualPremiums)}</strong>. The Advisor tab checks these against your estimated needs.
-      </p>
-
-      <form className="card form-grid" onSubmit={submit}>
-        <label>Policy type
-          <select value={form.type} onChange={e => set('type', e.target.value)}>
-            {POLICY_TYPES.map(t => <option key={t}>{t}</option>)}
-          </select>
-        </label>
-        <label>Provider
-          <input value={form.provider} onChange={e => set('provider', e.target.value)} placeholder="e.g. Geico, MetLife, Aetna" />
-        </label>
-        <label>Policy name / number
-          <input value={form.policyName} onChange={e => set('policyName', e.target.value)} placeholder="e.g. Term 20 #12345" />
-        </label>
-        <label>Coverage amount ($)
-          <input type="number" step="1" value={form.coverageAmount} onChange={e => set('coverageAmount', e.target.value)} placeholder="e.g. 500000" />
-        </label>
-        <label>Premium ($)
-          <input type="number" step="0.01" value={form.premium} onChange={e => set('premium', e.target.value)} />
-        </label>
-        <label>Premium frequency
-          <select value={form.premiumFreq} onChange={e => set('premiumFreq', e.target.value)}>
-            {FREQS.map(f => <option key={f}>{f}</option>)}
-          </select>
-        </label>
-        <label>Deductible ($)
-          <input type="number" step="1" value={form.deductible} onChange={e => set('deductible', e.target.value)} />
-        </label>
-        <label>Renewal date
-          <input type="date" value={form.renewalDate} onChange={e => set('renewalDate', e.target.value)} />
-        </label>
-        <label className="span-2">Notes
-          <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. through employer, includes spouse" />
-        </label>
-        <div className="form-actions">
-          <button className="btn primary" type="submit">{editingId ? 'Save changes' : 'Add policy'}</button>
-          {editingId && <button className="btn" type="button" onClick={() => { setEditingId(null); setForm(blank) }}>Cancel</button>}
+      <div className="page-head">
+        <div>
+          <h1>Insurance</h1>
+          <p className="muted small money">
+            Total annual premiums: <strong>{fmt(annualPremiums)}</strong> · the Advisor checks coverage against your estimated needs.
+          </p>
         </div>
-      </form>
+        <button className="btn primary" onClick={() => { setShowForm(s => !s); setEditingId(null); setForm(blank) }}>
+          <Icon name="plus" size={14} /> Add policy
+        </button>
+      </div>
 
-      {state.insurance.length > 0 && (
+      {(showForm || editingId) && (
+        <form className="card form-grid form-in" onSubmit={submit}>
+          <label>Policy type
+            <select autoFocus value={form.type} onChange={e => set('type', e.target.value)}>
+              {POLICY_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </label>
+          <label>Provider
+            <input value={form.provider} onChange={e => set('provider', e.target.value)} placeholder="e.g. Geico, MetLife, Aetna" />
+          </label>
+          <label>Policy name / number
+            <input value={form.policyName} onChange={e => set('policyName', e.target.value)} placeholder="e.g. Term 20 #12345" />
+          </label>
+          <label>Coverage amount
+            <span className="input-money">
+              <input type="number" step="1" inputMode="decimal" value={form.coverageAmount} onChange={e => set('coverageAmount', e.target.value)} placeholder="500000" />
+            </span>
+          </label>
+          <label>Premium
+            <span className="input-money">
+              <input type="number" step="0.01" inputMode="decimal" value={form.premium} onChange={e => set('premium', e.target.value)} />
+            </span>
+          </label>
+          <label>Premium frequency
+            <select value={form.premiumFreq} onChange={e => set('premiumFreq', e.target.value)}>
+              {FREQS.map(f => <option key={f}>{f}</option>)}
+            </select>
+          </label>
+          <label>Deductible
+            <span className="input-money">
+              <input type="number" step="1" inputMode="decimal" value={form.deductible} onChange={e => set('deductible', e.target.value)} />
+            </span>
+          </label>
+          <label>Renewal date
+            <input type="date" value={form.renewalDate} onChange={e => set('renewalDate', e.target.value)} />
+          </label>
+          <label className="span-2">Notes
+            <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. through employer, includes spouse" />
+          </label>
+          <div className="form-actions">
+            <button className="btn primary" type="submit">{editingId ? 'Save changes' : 'Add policy'}</button>
+            <button className="btn" type="button" onClick={() => { setEditingId(null); setShowForm(false); setForm(blank) }}>Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {state.insurance.length === 0 && !showForm ? (
+        <div className="card">
+          <div className="empty">
+            <Icon name="shield" />
+            <strong>No policies tracked yet</strong>
+            <span className="small">Track coverage, premiums, deductibles and renewal dates — renewals within 45 days get a re-shop reminder.</span>
+            <button className="btn primary" onClick={() => setShowForm(true)}><Icon name="plus" size={14} /> Add policy</button>
+          </div>
+        </div>
+      ) : state.insurance.length > 0 && (
         <div className="card">
           <table className="table">
             <thead>
@@ -89,14 +131,16 @@ export default function Insurance() {
                 <tr key={p.id}>
                   <td>{p.type}</td>
                   <td>{p.provider || '—'}</td>
-                  <td className="desc">{p.policyName || '—'}</td>
+                  <td className="desc small">{p.policyName || '—'}</td>
                   <td className="num">{fmt(p.coverageAmount)}</td>
                   <td className="num">{fmt(p.premium)} / {p.premiumFreq}</td>
                   <td className="num">{fmt(p.deductible)}</td>
-                  <td>{p.renewalDate || '—'}</td>
+                  <td className="small">{p.renewalDate || '—'}</td>
                   <td className="row-actions">
-                    <button className="btn small" onClick={() => { setEditingId(p.id); setForm({ type: p.type, provider: p.provider, policyName: p.policyName, coverageAmount: p.coverageAmount, premium: p.premium, premiumFreq: p.premiumFreq, deductible: p.deductible, renewalDate: p.renewalDate, notes: p.notes }) }}>Edit</button>
-                    <button className="btn small danger" onClick={() => dispatch({ type: 'DELETE_INSURANCE', payload: p.id })}>Delete</button>
+                    <button className="btn ghost small" onClick={() => { setEditingId(p.id); setShowForm(true); setForm({ type: p.type, provider: p.provider, policyName: p.policyName, coverageAmount: p.coverageAmount, premium: p.premium, premiumFreq: p.premiumFreq, deductible: p.deductible, renewalDate: p.renewalDate, notes: p.notes }) }}>Edit</button>
+                    <button className={armedId === p.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(p)}>
+                      {armedId === p.id ? 'Confirm?' : 'Delete'}
+                    </button>
                   </td>
                 </tr>
               ))}
