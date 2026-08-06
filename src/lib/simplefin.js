@@ -41,24 +41,37 @@ function viaProxy(targetUrl, proxyUrl) {
   return `${p}/?url=${encodeURIComponent(targetUrl)}`
 }
 
+// Attempt order: explicit proxy if configured; otherwise direct, then the
+// same-origin serverless proxy (/api/simplefin — present on Vercel deploys).
 async function request(targetUrl, { method = 'GET', headers = {}, proxyUrl } = {}) {
-  let res
-  try {
-    res = await fetch(viaProxy(targetUrl, proxyUrl), { method, headers })
-  } catch (e) {
-    if (!proxyUrl) {
-      throw new Error(
-        'Network/CORS error talking to SimpleFIN directly from the browser. ' +
-        'Deploy the included proxy (proxy/cloudflare-worker.js — free) and paste its URL under “Advanced” below, then retry.'
-      )
+  const attempts = proxyUrl ? [proxyUrl] : [null, '/api/simplefin']
+  let lastError
+  for (const proxy of attempts) {
+    let res
+    try {
+      res = await fetch(viaProxy(targetUrl, proxy), { method, headers })
+    } catch (e) {
+      lastError = e
+      continue // network/CORS failure — try the next transport
     }
-    throw new Error(`Network error via proxy: ${e.message}`)
+    // A 404 without our proxy marker means the fallback endpoint doesn't exist
+    // on this host (e.g. GitHub Pages) — not a real SimpleFIN response.
+    if (proxy === '/api/simplefin' && res.status === 404 && !res.headers.get('X-Simplefin-Proxy')) {
+      lastError = new Error('no same-origin proxy available')
+      continue
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`SimpleFIN returned HTTP ${res.status}${body ? ` — ${body.slice(0, 200)}` : ''}`)
+    }
+    return res
   }
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`SimpleFIN returned HTTP ${res.status}${body ? ` — ${body.slice(0, 200)}` : ''}`)
-  }
-  return res
+  throw new Error(
+    'Could not reach SimpleFIN from the browser (CORS). On Vercel this is handled automatically by ' +
+    '/api/simplefin — redeploy with the latest code. On GitHub Pages, deploy the included proxy ' +
+    '(proxy/cloudflare-worker.js, free) and paste its URL under “Advanced”, then retry. ' +
+    `Last error: ${lastError?.message || 'unknown'}`
+  )
 }
 
 export async function claimAccessUrl(setupToken, { proxyUrl } = {}) {
