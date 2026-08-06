@@ -105,8 +105,9 @@ export default function ConnectSimpleFIN() {
           <details className="advanced">
             <summary>Advanced: CORS proxy</summary>
             <p className="muted small">
-              If the browser blocks direct requests (CORS), deploy the free one-file proxy in{' '}
-              <code>proxy/cloudflare-worker.js</code> and paste its URL here. See ARCHITECTURE.md.
+              Usually not needed: on Vercel the built-in <code>/api/simplefin</code> proxy is used
+              automatically. Only for other static hosts (e.g. GitHub Pages), deploy the free one-file proxy
+              in <code>proxy/cloudflare-worker.js</code> and paste its URL here. See ARCHITECTURE.md.
             </p>
             <input value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} placeholder="https://your-proxy.workers.dev" />
           </details>
