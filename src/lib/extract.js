@@ -3,14 +3,14 @@
 // out with label-anchored patterns that match standard US closing disclosures,
 // loan estimates, and promissory notes.
 
-// The legacy build supports older Safari/Chrome; the ?url import makes Vite
-// emit the worker as a real asset and hand back its resolved URL (a bare
-// `new URL('pdfjs-dist/...')` is NOT rewritten by the bundler and 404s at
-// runtime — the cause of "undefined is not a function" inside the parser).
-import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+// pdfjs-dist is PINNED to v3 (3.11.174): its legacy build targets much older
+// browsers than v4+ (which needs recent Safari and crashed there), and its
+// worker is a classic script rather than a module worker. The ?url import
+// makes Vite emit the worker as a real asset and hand back its resolved URL.
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.js?url'
 
 export async function extractPdfText(blob) {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js')
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
   const task = pdfjs.getDocument({ data: await blob.arrayBuffer() })
   const doc = await task.promise

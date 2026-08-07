@@ -123,6 +123,7 @@ export default function App() {
 
         <footer className="app-footer">
           Guidance is educational, not professional tax, legal, or investment advice.
+          <span style={{ float: 'right' }}>build {typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'}</span>
         </footer>
       </div>
     </div>
