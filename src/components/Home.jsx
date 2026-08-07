@@ -313,7 +313,7 @@ export default function Home() {
                         return { ...x, picked }
                       })}
                     />
-                    {f.label}: {f.unit === '%' ? `${f.value}%` : fmt(f.value, { maximumFractionDigits: 2 })}
+                    {f.label}: {f.unit === '%' ? `${f.value}%` : f.unit === 'text' ? f.value : fmt(f.value, { maximumFractionDigits: 2 })}
                   </label>
                 ))}
               </div>
