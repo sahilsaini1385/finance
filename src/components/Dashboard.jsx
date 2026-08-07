@@ -72,11 +72,11 @@ export default function Dashboard({ onNavigate }) {
   const spendByCat = useMemo(() => {
     const m = {}
     for (const t of state.transactions) {
-      if (monthKey(t.date) !== thisMonth || t.amount >= 0) continue
-      if (t.category === 'Transfers' || t.category === 'Investments') continue
-      m[t.category] = (m[t.category] || 0) + -t.amount
+      if (monthKey(t.date) !== thisMonth) continue
+      if (t.category === 'Transfers' || t.category === 'Investments' || t.category === 'Income') continue
+      m[t.category] = (m[t.category] || 0) + -t.amount // refunds/reimbursements net out
     }
-    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8)
   }, [state.transactions, thisMonth])
 
   const recs = getRecommendations(state)

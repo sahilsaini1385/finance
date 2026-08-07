@@ -62,10 +62,13 @@ export function monthActivity(state, month) {
       income += t.amount
       continue
     }
-    if (t.amount >= 0 || EXCLUDED.includes(t.category)) continue
+    if (EXCLUDED.includes(t.category)) continue
+    // Positive amounts in a spending category are refunds/reimbursements
+    // (returns, employer paying back Work expenses) — they net against spend.
     spentByCat[t.category] = (spentByCat[t.category] || 0) + -t.amount
-    if (t.category === 'Other') needsReview.push(t)
+    if (t.amount < 0 && t.category === 'Other') needsReview.push(t)
   }
+  for (const c of Object.keys(spentByCat)) if (spentByCat[c] < 0) spentByCat[c] = 0
   needsReview.sort((a, b) => a.amount - b.amount) // largest expense first
   return { income, spentByCat, needsReview }
 }

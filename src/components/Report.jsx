@@ -24,14 +24,18 @@ function monthStats(transactions, month) {
       income += t.amount
       continue
     }
-    if (t.amount >= 0 || EXCLUDED.includes(t.category)) continue
-    const amt = -t.amount
+    if (EXCLUDED.includes(t.category)) continue
+    const amt = -t.amount // refunds/reimbursements come in positive and net out
     spend += amt
     byCat[t.category] = (byCat[t.category] || 0) + amt
-    const m = normalizeMerchant(t.description)
-    if (m) byMerchant[m] = (byMerchant[m] || 0) + amt
-    biggest.push(t)
+    if (t.amount < 0) {
+      const m = normalizeMerchant(t.description)
+      if (m) byMerchant[m] = (byMerchant[m] || 0) + amt
+      biggest.push(t)
+    }
   }
+  for (const c of Object.keys(byCat)) if (byCat[c] < 0) delete byCat[c]
+  if (spend < 0) spend = 0
   biggest.sort((a, b) => a.amount - b.amount)
   return { income, spend, byCat, byMerchant, biggest: biggest.slice(0, 3) }
 }
