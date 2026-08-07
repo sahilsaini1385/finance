@@ -15,6 +15,7 @@ export const CATEGORIES = [
   'Transfers',
   'Fees',
   'Education',
+  'Work expenses',
   'Other',
 ]
 
