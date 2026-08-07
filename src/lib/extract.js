@@ -9,10 +9,21 @@
 // makes Vite emit the worker as a real asset and hand back its resolved URL.
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.js?url'
 
+// Older WebKit lacks Blob.arrayBuffer(); FileReader works everywhere.
+function blobToArrayBuffer(blob) {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer()
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result)
+    r.onerror = () => reject(r.error)
+    r.readAsArrayBuffer(blob)
+  })
+}
+
 export async function extractPdfText(blob) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js')
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
-  const task = pdfjs.getDocument({ data: await blob.arrayBuffer() })
+  const task = pdfjs.getDocument({ data: await blobToArrayBuffer(blob) })
   const doc = await task.promise
   let text = ''
   const pages = Math.min(doc.numPages, 20)
