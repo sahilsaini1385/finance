@@ -15,7 +15,11 @@ export const initialState = {
   rules: [],         // categorization rules: {id, match (normalized merchant), category}
   goals: [],         // {id, name, target, accountIds: [], targetDate, note}
   homeBills: [],     // {id, month: 'YYYY-MM', type, amount, hasFile, note}
-  budgets: {},       // {category: monthlyAmount}
+  budgets: {},       // budget TEMPLATE: {category: monthlyAmount} — the default month
+  budgetMonths: {},  // per-month overrides: {'YYYY-MM': {category: amount}}
+  budgetConfig: { incomeTarget: '' },
+  sinkingFunds: [],  // {id, name, monthlyAmount, note}
+  customCategories: [], // {id, name} — user-defined spending categories
   home: {
     nickname: '',
     purchasePrice: '',
@@ -54,6 +58,7 @@ function reducer(state, action) {
         ...action.payload,
         profile: { ...initialState.profile, ...(action.payload.profile || {}) },
         home: { ...initialState.home, ...(action.payload.home || {}) },
+        budgetConfig: { ...initialState.budgetConfig, ...(action.payload.budgetConfig || {}) },
       }
     case 'ADD_ACCOUNT':
       return { ...state, accounts: [...state.accounts, action.payload] }
@@ -126,6 +131,56 @@ function reducer(state, action) {
       if (Number.isNaN(amount) || amount <= 0) delete budgets[action.payload.category]
       else budgets[action.payload.category] = amount
       return { ...state, budgets }
+    }
+    case 'SET_MONTH_BUDGET': {
+      const { month, category, amount } = action.payload
+      const months = { ...(state.budgetMonths || {}) }
+      const m = { ...(months[month] || {}) }
+      if (amount === '' || amount === null || amount === undefined) delete m[category]
+      else {
+        const v = parseFloat(amount)
+        if (Number.isNaN(v) || v < 0) delete m[category]
+        else m[category] = v
+      }
+      if (Object.keys(m).length === 0) delete months[month]
+      else months[month] = m
+      return { ...state, budgetMonths: months }
+    }
+    case 'CLEAR_MONTH_BUDGETS': {
+      const months = { ...(state.budgetMonths || {}) }
+      delete months[action.payload]
+      return { ...state, budgetMonths: months }
+    }
+    case 'SET_BUDGET_CONFIG':
+      return { ...state, budgetConfig: { ...(state.budgetConfig || {}), ...action.payload } }
+    case 'ADD_SINKING':
+      return { ...state, sinkingFunds: [...(state.sinkingFunds || []), action.payload] }
+    case 'DELETE_SINKING':
+      return { ...state, sinkingFunds: (state.sinkingFunds || []).filter(f => f.id !== action.payload) }
+    case 'ADD_CATEGORY': {
+      const name = action.payload.name.trim()
+      if (!name) return state
+      return { ...state, customCategories: [...(state.customCategories || []), { id: action.payload.id, name }] }
+    }
+    case 'DELETE_CATEGORY': {
+      const cat = (state.customCategories || []).find(c => c.id === action.payload)
+      if (!cat) return state
+      const budgets = { ...state.budgets }
+      delete budgets[cat.name]
+      const budgetMonths = {}
+      for (const [m, map] of Object.entries(state.budgetMonths || {})) {
+        const copy = { ...map }
+        delete copy[cat.name]
+        if (Object.keys(copy).length > 0) budgetMonths[m] = copy
+      }
+      return {
+        ...state,
+        customCategories: state.customCategories.filter(c => c.id !== action.payload),
+        budgets,
+        budgetMonths,
+        rules: (state.rules || []).filter(r => r.category !== cat.name),
+        transactions: state.transactions.map(t => (t.category === cat.name ? { ...t, category: 'Other' } : t)),
+      }
     }
     case 'SET_HOME':
       return { ...state, home: { ...state.home, ...action.payload } }
