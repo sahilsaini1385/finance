@@ -38,8 +38,9 @@ function median(arr) {
 //           count, lastDate, increased}] sorted by monthlyCost desc.
 export function detectRecurring(transactions) {
   const groups = new Map()
+  const NOT_BILLS = ['Transfers', 'Groceries', 'Dining'] // steady habits aren't subscriptions
   for (const t of transactions) {
-    if (t.amount >= 0 || t.category === 'Transfers') continue
+    if (t.amount >= 0 || NOT_BILLS.includes(t.category)) continue
     const key = normalizeMerchant(t.description)
     if (!key) continue
     if (!groups.has(key)) groups.set(key, [])
@@ -95,6 +96,47 @@ export function detectRecurring(transactions) {
     })
   }
   return out.sort((a, b) => b.monthlyCost - a.monthlyCost)
+}
+
+const CADENCE_DAYS = { weekly: 7, biweekly: 14, monthly: 30.44, annual: 365.25 }
+
+// Project detected recurring charges (and insurance renewals) forward.
+// Returns { bills: [{date, label, amount, kind}], total } within `days` from today.
+export function upcomingBills(recurring, insurance = [], days = 30) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const horizon = new Date(today)
+  horizon.setDate(horizon.getDate() + days)
+  const bills = []
+
+  for (const r of recurring) {
+    const step = CADENCE_DAYS[r.cadence]
+    if (!step) continue
+    let next = new Date(r.lastDate)
+    // Walk forward from the last observed charge to the first due date >= today.
+    let guard = 0
+    while (next < today && guard++ < 400) next = new Date(next.getTime() + step * 86400000)
+    while (next <= horizon) {
+      bills.push({ date: next.toISOString().slice(0, 10), label: r.merchant.toLowerCase(), amount: r.medianAmount, kind: r.cadence })
+      next = new Date(next.getTime() + step * 86400000)
+    }
+  }
+
+  for (const p of insurance) {
+    if (!p.renewalDate) continue
+    const d = new Date(p.renewalDate)
+    if (d >= today && d <= horizon) {
+      bills.push({
+        date: p.renewalDate,
+        label: `${p.provider || p.policyName || 'policy'} ${p.type} renewal`.toLowerCase(),
+        amount: p.premiumFreq === 'year' ? num(p.premium) : num(p.premium),
+        kind: 'renewal',
+      })
+    }
+  }
+
+  bills.sort((a, b) => (a.date < b.date ? -1 : 1))
+  return { bills, total: bills.reduce((s, b) => s + b.amount, 0) }
 }
 
 const SERVICE_FAMILIES = [

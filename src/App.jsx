@@ -10,6 +10,7 @@ import Settings from './components/Settings.jsx'
 import Budget from './components/Budget.jsx'
 import TaxDocs from './components/TaxDocs.jsx'
 import Home from './components/Home.jsx'
+import Goals from './components/Goals.jsx'
 import Icon, { BrandMark } from './components/Icon.jsx'
 import { useStore } from './store.jsx'
 import { getRecommendations } from './lib/advisor.js'
@@ -26,6 +27,7 @@ const NAV = [
     { id: 'import', label: 'Add data', icon: 'upload' },
   ]},
   { group: 'Plan', items: [
+    { id: 'goals', label: 'Goals', icon: 'target' },
     { id: 'home', label: 'Home', icon: 'home' },
     { id: 'taxes', label: 'Taxes', icon: 'file-text' },
     { id: 'benefits', label: 'Benefits', icon: 'gift' },
@@ -109,6 +111,7 @@ export default function App() {
           {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}
           {tab === 'home' && <Home />}
           {tab === 'taxes' && <TaxDocs />}
+          {tab === 'goals' && <Goals />}
           {tab === 'benefits' && <Benefits />}
           {tab === 'insurance' && <Insurance />}
           {tab === 'advisor' && <Advisor />}

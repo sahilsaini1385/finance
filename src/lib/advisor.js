@@ -192,7 +192,8 @@ export function getRecommendations(state) {
 
   // ---------- Insurance ----------
   const lifeCoverage = coverageOf(state, 'life')
-  if (income > 0 && (dependents > 0 || num(p.spouseIncome) === 0)) {
+  const someoneDependsOnIncome = dependents > 0 || (p.filingStatus === 'mfj' && num(p.spouseIncome) < income * 0.5)
+  if (income > 0 && someoneDependsOnIncome) {
     // DIME: Debt + Income replacement (10x) + Mortgage + Education
     const dime = num(p.otherDebt) + income * 10 + num(p.mortgageBalance) + num(p.educationNeeds)
     if (lifeCoverage < dime) {
