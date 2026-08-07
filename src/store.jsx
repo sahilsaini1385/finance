@@ -107,10 +107,20 @@ function reducer(state, action) {
       const { newAccounts, updatedAccounts, transactions } = action.payload
       const updates = Object.fromEntries(updatedAccounts.map(u => [u.id, u]))
       const existingHashes = new Set(state.transactions.map(t => t.hash))
+      // Rows with an id are new; rows without are re-sends of known hashes
+      // (e.g. a pending transaction that has now posted) — patch in place,
+      // preserving the user's category edits.
+      const patches = new Map(transactions.filter(t => !t.id).map(t => [t.hash, t]))
+      const additions = transactions.filter(t => t.id && !existingHashes.has(t.hash))
       return {
         ...state,
         accounts: state.accounts.map(a => (updates[a.id] ? { ...a, ...updates[a.id] } : a)).concat(newAccounts),
-        transactions: [...state.transactions, ...transactions.filter(t => !existingHashes.has(t.hash))],
+        transactions: state.transactions
+          .map(t => {
+            const p = patches.get(t.hash)
+            return p ? { ...t, date: p.date, description: p.description, amount: p.amount, pending: p.pending } : t
+          })
+          .concat(additions),
       }
     }
     case 'SET_PROFILE':

@@ -87,7 +87,10 @@ export default function Transactions() {
               {rows.map(t => (
                 <tr key={t.id}>
                   <td className="nowrap small">{t.date}</td>
-                  <td className="desc">{t.description}</td>
+                  <td className="desc">
+                    {t.description}
+                    {t.pending && <span className="badge" style={{ marginLeft: 6 }}>pending</span>}
+                  </td>
                   <td className="small">{accountName(t.accountId)}</td>
                   <td>
                     <select
