@@ -42,6 +42,7 @@ export async function extractPdfText(blob) {
 
 const MONEY = String.raw`\$?\s*([\d,]+(?:\.\d{1,2})?)`
 
+// NOTE: no lookbehind anywhere in this file — Safari < 16.4 doesn't support it.
 function grab(text, patterns) {
   for (const re of patterns) {
     const m = text.match(re)
@@ -53,22 +54,31 @@ function grab(text, patterns) {
   return null
 }
 
-// Returns {fields: {label, key, value, unit}[], confidence: 'good'|'thin'}
+// Handles both document families: closing disclosures / loan estimates /
+// promissory notes AND monthly servicer statements (Rocket, Chase, etc.).
+// Returns {fields: {label, key, value, unit}[], confidence: 'good'|'thin'|'none'}
 export function extractMortgageFields(rawText) {
   const text = rawText.replace(/\s+/g, ' ')
   const fields = []
 
-  const loanAmount = grab(text, [
+  // --- Balance: current principal balance (statements) beats original loan
+  // amount (closing docs) when both appear.
+  const balance = grab(text, [
+    new RegExp(String.raw`Interest[- ]bearing principal balance:?[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`Unpaid principal balance:?[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`Outstanding principal(?: balance)?:?[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`Current principal(?: balance)?:?[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`Principal balance:?[^$\d]{0,40}${MONEY}`, 'i'),
     new RegExp(String.raw`Loan Amount[^$\d]{0,40}${MONEY}`, 'i'),
     new RegExp(String.raw`Principal (?:Amount|Sum)[^$\d]{0,40}${MONEY}`, 'i'),
     new RegExp(String.raw`Amount Financed[^$\d]{0,40}${MONEY}`, 'i'),
   ])
-  if (loanAmount && loanAmount >= 10000) {
-    fields.push({ key: 'mortgageBalance', label: 'Loan amount', value: loanAmount, unit: '$' })
+  if (balance && balance >= 1000) {
+    fields.push({ key: 'mortgageBalance', label: 'Principal balance', value: balance, unit: '$' })
   }
 
   const rate = grab(text, [
-    /Interest Rate[^\d]{0,30}([\d.]+)\s*%/i,
+    /(?:Current )?Interest rate:?[^\d]{0,30}([\d.]+)\s*%/i,
     /Note Rate[^\d]{0,30}([\d.]+)\s*%/i,
     /rate of[^\d]{0,20}([\d.]+)\s*%/i,
   ])
@@ -76,41 +86,81 @@ export function extractMortgageFields(rawText) {
     fields.push({ key: 'mortgageRate', label: 'Interest rate', value: rate, unit: '%' })
   }
 
-  const pi = grab(text, [
-    new RegExp(String.raw`(?:Monthly )?Principal\s*(?:&|and)\s*Interest[^$\d]{0,40}${MONEY}`, 'i'),
-    new RegExp(String.raw`Monthly Payment[^$\d]{0,40}${MONEY}`, 'i'),
+  // --- Monthly P&I. Closing docs label it directly. Statements list the
+  // amount-due breakdown after "Explanation of amount due": sum those two.
+  // A candidate only counts if it's a plausible payment — otherwise fall
+  // through to the next strategy (boilerplate like "Principal and Interest
+  // due; 2) Escrow..." would otherwise capture stray digits and block it).
+  const plausiblePI = v => v !== null && v >= 100 && v <= 50000
+  let pi = grab(text, [
+    new RegExp(String.raw`(?:Monthly )?Principal\s*(?:&|and)\s*Interest(?: Payment)?[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`P\s*&\s*I(?: Payment)?[^$\d]{0,40}${MONEY}`, 'i'),
   ])
-  if (pi && pi >= 100 && pi <= 50000) {
-    fields.push({ key: 'monthlyPayment', label: 'Monthly principal & interest', value: pi, unit: '$' })
+  let piLabel = 'Monthly principal & interest'
+  if (!plausiblePI(pi)) {
+    pi = null
+    const expIdx = text.search(/Explanation of amount due/i)
+    const section = expIdx >= 0 ? text.slice(expIdx, expIdx + 600) : text
+    const m = section.match(new RegExp(String.raw`Principal:?\s*${MONEY}[^$]{0,40}\$?\s*Interest:?\s*\$?\s*([\d,]+(?:\.\d{1,2})?)`, 'i'))
+    if (m) {
+      const p = parseFloat(m[1].replace(/,/g, ''))
+      const i = parseFloat(m[2].replace(/,/g, ''))
+      if (p > 0 && i > 0) {
+        pi = Math.round((p + i) * 100) / 100
+        piLabel = 'Monthly P&I (principal + interest due)'
+      }
+    }
+  }
+  if (!plausiblePI(pi)) {
+    const total = grab(text, [
+      new RegExp(String.raw`Regular monthly payment:?[^$\d]{0,40}${MONEY}`, 'i'),
+      new RegExp(String.raw`Monthly Payment(?: Amount)?:?[^$\d]{0,40}${MONEY}`, 'i'),
+    ])
+    if (plausiblePI(total)) {
+      pi = total
+      piLabel = 'Monthly payment (may include escrow — verify)'
+    }
+  }
+  if (plausiblePI(pi)) {
+    fields.push({ key: 'monthlyPayment', label: piLabel, value: pi, unit: '$' })
   }
 
   const price = grab(text, [
-    new RegExp(String.raw`(?:Sale|Purchase) Price[^$\d]{0,40}${MONEY}`, 'i'),
-    new RegExp(String.raw`Contract Sales Price[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`(?:Contract )?Sales? Price[^$\d]{0,40}${MONEY}`, 'i'),
+    new RegExp(String.raw`Purchase Price[^$\d]{0,40}${MONEY}`, 'i'),
   ])
   if (price && price >= 10000) {
     fields.push({ key: 'purchasePrice', label: 'Purchase price', value: price, unit: '$' })
   }
 
-  const propTax = grab(text, [
+  // --- Escrowed taxes & insurance (statements): "Escrow amount: Taxes: $X
+  // Insurance: $Y" are monthly figures. Closing docs use "per month" phrasing.
+  const escrow = text.match(new RegExp(String.raw`Taxes:?\s*${MONEY}(?:[^$]{0,30}Insurance:?\s*\$?\s*([\d,]+(?:\.\d{1,2})?))?`, 'i'))
+  const monthlyTax = grab(text, [
     new RegExp(String.raw`Property Tax(?:es)?[^$\d]{0,60}${MONEY}\s*(?:per month|/ ?mo|monthly)`, 'i'),
-  ])
-  if (propTax) {
-    fields.push({ key: 'propertyTaxAnnual', label: 'Property tax (monthly × 12)', value: Math.round(propTax * 12), unit: '$' })
+  ]) || (escrow ? parseFloat(escrow[1].replace(/,/g, '')) : null)
+  if (monthlyTax && monthlyTax >= 20 && monthlyTax <= 10000) {
+    fields.push({ key: 'propertyTaxAnnual', label: 'Property tax (monthly × 12)', value: Math.round(monthlyTax * 12), unit: '$' })
   } else {
-    const propTaxAnnual = grab(text, [
+    const annualTax = grab(text, [
       new RegExp(String.raw`(?:Annual )?Property Tax(?:es)?[^$\d]{0,60}${MONEY}`, 'i'),
     ])
-    if (propTaxAnnual && propTaxAnnual >= 200) {
-      fields.push({ key: 'propertyTaxAnnual', label: 'Property tax', value: propTaxAnnual, unit: '$' })
+    if (annualTax && annualTax >= 200) {
+      fields.push({ key: 'propertyTaxAnnual', label: 'Property tax', value: annualTax, unit: '$' })
     }
   }
 
-  const insurance = grab(text, [
+  const monthlyIns = grab(text, [
     new RegExp(String.raw`Homeowner'?s? Insurance[^$\d]{0,60}${MONEY}\s*(?:per month|/ ?mo|monthly)`, 'i'),
-  ])
-  if (insurance) {
-    fields.push({ key: 'insuranceAnnual', label: "Homeowner's insurance (monthly × 12)", value: Math.round(insurance * 12), unit: '$' })
+  ]) || (escrow && escrow[2] ? parseFloat(escrow[2].replace(/,/g, '')) : null)
+  if (monthlyIns && monthlyIns >= 10 && monthlyIns <= 5000) {
+    fields.push({ key: 'insuranceAnnual', label: 'Home insurance (monthly × 12)', value: Math.round(monthlyIns * 12), unit: '$' })
+  }
+
+  // --- Property address (statements print it near the top).
+  const addr = text.match(/Property address:?\s+(.{8,70}?)\s+(?:Statement date|Loan number|Due date|Amount due)/i)
+  if (addr) {
+    fields.push({ key: 'nickname', label: 'Property address', value: addr[1].trim(), unit: 'text' })
   }
 
   return { fields, confidence: fields.length >= 3 ? 'good' : fields.length > 0 ? 'thin' : 'none' }
