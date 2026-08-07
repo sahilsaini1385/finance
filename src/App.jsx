@@ -11,6 +11,7 @@ import Budget from './components/Budget.jsx'
 import TaxDocs from './components/TaxDocs.jsx'
 import Home from './components/Home.jsx'
 import Goals from './components/Goals.jsx'
+import Report from './components/Report.jsx'
 import Icon, { BrandMark } from './components/Icon.jsx'
 import { useStore } from './store.jsx'
 import { getRecommendations } from './lib/advisor.js'
@@ -24,6 +25,7 @@ const NAV = [
     { id: 'accounts', label: 'Accounts', icon: 'landmark' },
     { id: 'transactions', label: 'Transactions', icon: 'list' },
     { id: 'budget', label: 'Budget', icon: 'pie-chart' },
+    { id: 'report', label: 'Report', icon: 'bar-chart' },
     { id: 'import', label: 'Add data', icon: 'upload' },
   ]},
   { group: 'Plan', items: [
@@ -112,6 +114,7 @@ export default function App() {
           {tab === 'home' && <Home />}
           {tab === 'taxes' && <TaxDocs />}
           {tab === 'goals' && <Goals />}
+          {tab === 'report' && <Report />}
           {tab === 'benefits' && <Benefits />}
           {tab === 'insurance' && <Insurance />}
           {tab === 'advisor' && <Advisor />}
