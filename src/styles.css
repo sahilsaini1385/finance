@@ -155,7 +155,12 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'cv11';
-  background: var(--page);
+  /* A whisper of accent light at the top of the page — sets the surfaces off
+     without reading as a "gradient design". */
+  background:
+    radial-gradient(900px 320px at 20% -80px, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%),
+    var(--page);
+  background-attachment: fixed;
   color: var(--text);
 }
 ::selection {
@@ -441,6 +446,8 @@ code {
 /* ---------- stat tiles / hero ---------- */
 .hero-card {
   padding: 24px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%, var(--surface) 55%);
 }
 .hero-value {
   font-size: 32px;
@@ -491,8 +498,14 @@ code {
   cursor: pointer;
   transition: border-color var(--dur-1) var(--ease);
 }
+.stat-tile {
+  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease),
+    box-shadow var(--dur-2) var(--ease);
+}
 .stat-tile:hover {
   border-color: var(--muted);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2), var(--card-inset);
 }
 .stat-value {
   font-size: 22px;
