@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { CATEGORIES } from '../lib/categorize.js'
 import Icon from './Icon.jsx'
+import { useToast } from './Toaster.jsx'
 
 const EXCLUDED = ['Income', 'Transfers', 'Investments']
 const BUDGETABLE = CATEGORIES.filter(c => !EXCLUDED.includes(c))
@@ -12,10 +13,56 @@ function shiftMonth(month, delta) {
   return d.toISOString().slice(0, 7)
 }
 
+// Round a suggested budget to a human number, always upward.
+function roundBudget(v) {
+  if (v < 100) return Math.ceil(v / 10) * 10
+  return Math.ceil(v / 25) * 25
+}
+
+// Average monthly spend per category over up to the last 3 FULL months
+// (the current partial month would understate everything).
+function suggestBudgets(transactions, thisMonth) {
+  const months = [shiftMonth(thisMonth, -1), shiftMonth(thisMonth, -2), shiftMonth(thisMonth, -3)]
+  const monthsWithData = new Set()
+  const totals = {}
+  for (const t of transactions) {
+    const m = t.date?.slice(0, 7)
+    if (!months.includes(m) || t.amount >= 0 || EXCLUDED.includes(t.category)) continue
+    monthsWithData.add(m)
+    totals[t.category] = (totals[t.category] || 0) + -t.amount
+  }
+  const divisor = Math.max(1, monthsWithData.size)
+  const out = {}
+  for (const [cat, total] of Object.entries(totals)) out[cat] = roundBudget(total / divisor)
+  return { suggestions: out, monthsUsed: divisor }
+}
+
 export default function Budget() {
   const { state, dispatch } = useStore()
+  const toast = useToast()
   const thisMonth = new Date().toISOString().slice(0, 7)
   const [month, setMonth] = useState(thisMonth)
+
+  const { suggestions, monthsUsed } = useMemo(
+    () => suggestBudgets(state.transactions, thisMonth),
+    [state.transactions, thisMonth],
+  )
+
+  const applyAllSuggestions = () => {
+    let applied = 0
+    for (const [cat, amount] of Object.entries(suggestions)) {
+      if (!state.budgets?.[cat]) {
+        dispatch({ type: 'SET_BUDGET', payload: { category: cat, amount } })
+        applied++
+      }
+    }
+    toast(
+      applied > 0
+        ? `Filled ${applied} budgets from your ${monthsUsed}-month spending average`
+        : 'All categories with spending history already have budgets',
+      { kind: applied > 0 ? 'good' : 'info' },
+    )
+  }
 
   const spent = useMemo(() => {
     const m = {}
@@ -48,7 +95,12 @@ export default function Budget() {
           <h1>Budget</h1>
           <p className="muted small">Set a monthly amount per category — actuals come from your imported and synced transactions.</p>
         </div>
-        <div className="row gap">
+        <div className="row gap wrap">
+          {Object.keys(suggestions).length > 0 && (
+            <button className="btn small" onClick={applyAllSuggestions} title="Fill empty budgets from your recent average spending">
+              <Icon name="sparkle" size={13} /> Auto-fill from spending
+            </button>
+          )}
           <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, -1))} aria-label="Previous month">←</button>
           <strong className="nowrap">{monthLabel}</strong>
           <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= thisMonth} aria-label="Next month">→</button>
@@ -121,6 +173,17 @@ export default function Budget() {
                         aria-label={`${cat} monthly budget`}
                       />
                     </span>
+                    {!budgets[cat] && suggestions[cat] && (
+                      <div>
+                        <button
+                          className="chip"
+                          title={`Set from your ${monthsUsed}-month average`}
+                          onClick={() => dispatch({ type: 'SET_BUDGET', payload: { category: cat, amount: suggestions[cat] } })}
+                        >
+                          avg {fmt(suggestions[cat])} — use
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td>
                     {budget > 0 ? (
@@ -157,8 +220,9 @@ export default function Budget() {
           )}
         </table>
         <p className="muted small">
-          Budgets apply to every month. A good starting point: copy last month's actuals, then trim the two
-          categories you most want to change — small, specific cuts stick better than across-the-board ones.
+          Budgets apply to every month. “Auto-fill from spending” sets each empty budget to your average over the
+          last {monthsUsed === 1 ? 'full month' : `${monthsUsed} full months`} of transactions (rounded up) — then
+          trim the two categories you most want to change; small, specific cuts stick better than across-the-board ones.
         </p>
       </div>
     </div>
