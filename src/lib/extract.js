@@ -12,7 +12,8 @@ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 export async function extractPdfText(blob) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
-  const doc = await pdfjs.getDocument({ data: await blob.arrayBuffer() }).promise
+  const task = pdfjs.getDocument({ data: await blob.arrayBuffer() })
+  const doc = await task.promise
   let text = ''
   const pages = Math.min(doc.numPages, 20)
   for (let p = 1; p <= pages; p++) {
@@ -20,7 +21,11 @@ export async function extractPdfText(blob) {
     const content = await page.getTextContent()
     text += content.items.map(i => i.str).join(' ') + '\n'
   }
-  await doc.destroy()
+  // v6 moved teardown to the loading task; guard so a future API shuffle can
+  // never break extraction after the text is already in hand.
+  try {
+    if (typeof task.destroy === 'function') await task.destroy()
+  } catch { /* cleanup is best-effort */ }
   return text
 }
 
