@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { normalizeMerchant, detectRecurring } from '../lib/savings.js'
+import { effectiveBudgets } from '../lib/budget.js'
 import Icon from './Icon.jsx'
 
 const EXCLUDED = ['Transfers', 'Investments']
@@ -65,7 +66,7 @@ export default function Report() {
   const net = cur.income - cur.spend
   const savingsRate = cur.income > 0 ? (net / cur.income) * 100 : null
   const monthLabel = new Date(month + '-02').toLocaleString(undefined, { month: 'long', year: 'numeric' })
-  const budgets = state.budgets || {}
+  const budgets = effectiveBudgets(state, month)
 
   const cats = Object.entries(cur.byCat).sort((a, b) => b[1] - a[1])
   const maxCat = Math.max(1, ...cats.map(([, v]) => v))

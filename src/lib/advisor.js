@@ -249,10 +249,15 @@ export function getRecommendations(state) {
     }
   }
 
-  // Budget overruns — current month
-  const budgets = state.budgets || {}
+  // Budget overruns — current month (per-month overrides respected)
+  const thisMonth = new Date().toISOString().slice(0, 7)
+  const monthOverrides = (state.budgetMonths || {})[thisMonth] || {}
+  const budgets = { ...(state.budgets || {}) }
+  for (const [c, v] of Object.entries(monthOverrides)) {
+    if (parseFloat(v) > 0) budgets[c] = parseFloat(v)
+    else delete budgets[c]
+  }
   if (Object.keys(budgets).length > 0) {
-    const thisMonth = new Date().toISOString().slice(0, 7)
     const spent = {}
     for (const t of state.transactions) {
       if (!t.date?.startsWith(thisMonth) || t.amount >= 0) continue

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, uid, fmtCents } from '../store.jsx'
-import { CATEGORIES } from '../lib/categorize.js'
+import { allCategories } from '../lib/budget.js'
 import { normalizeMerchant } from '../lib/savings.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -63,7 +63,7 @@ export default function Transactions() {
         </select>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} aria-label="Filter by category">
           <option value="all">All categories</option>
-          {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+          {allCategories(state).map(c => <option key={c}>{c}</option>)}
         </select>
         <input placeholder="Search description…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
@@ -118,7 +118,8 @@ export default function Transactions() {
                       aria-label="Category"
                       onChange={e => changeCategory(t, e.target.value)}
                     >
-                      {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                      {allCategories(state).map(c => <option key={c}>{c}</option>)}
+                      {!allCategories(state).includes(t.category) && <option>{t.category}</option>}
                     </select>
                   </td>
                   <td className={`num ${t.amount < 0 ? '' : 'pos'}`}>{fmtCents(t.amount)}</td>
