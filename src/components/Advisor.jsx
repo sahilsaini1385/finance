@@ -1,10 +1,12 @@
-import React from 'react'
-import { useStore } from '../store.jsx'
+import React, { useMemo } from 'react'
+import { useStore, fmt } from '../store.jsx'
 import { getRecommendations, LIMITS_2026 } from '../lib/advisor.js'
+import { getSavingsInsights } from '../lib/savings.js'
 import Icon from './Icon.jsx'
 
 const SEV_ICON = { critical: 'octagon-alert', warning: 'alert-triangle', info: 'lightbulb', good: 'check-circle' }
 const AREAS = [
+  ['savings', 'Where you can save'],
   ['tax', 'Tax management'],
   ['insurance', 'Insurance coverage'],
   ['planning', 'Planning & cash'],
@@ -36,7 +38,8 @@ export default function Advisor() {
   const { state, dispatch } = useStore()
   const p = state.profile
   const setP = payload => dispatch({ type: 'SET_PROFILE', payload })
-  const recs = getRecommendations(state)
+  const savings = useMemo(() => getSavingsInsights(state), [state.transactions])
+  const recs = [...savings.recs, ...getRecommendations(state)]
 
   const answered = PROFILE_FIELDS.filter(k => {
     const v = p[k]
@@ -56,6 +59,44 @@ export default function Advisor() {
           </p>
         </div>
       </div>
+
+      {savings.recurring.length > 0 && (
+        <div className="card">
+          <h2>Recurring charges detected · ~{fmt(savings.monthlyTotal)}/mo · ~{fmt(savings.monthlyTotal * 12)}/yr</h2>
+          <p className="muted small">
+            Found by pattern-matching your transactions (steady amounts on a steady cadence). Scan for anything
+            you haven't used lately — cancelling an unused subscription is the highest-certainty saving there is.
+          </p>
+          <table className="table">
+            <thead>
+              <tr><th>Merchant</th><th>Cadence</th><th className="num">Amount</th><th className="num">≈ Monthly</th><th className="num">≈ Yearly</th><th>Last charged</th></tr>
+            </thead>
+            <tbody>
+              {savings.recurring.map(r => (
+                <tr key={r.merchant}>
+                  <td>
+                    {r.merchant.toLowerCase()}
+                    {r.increased && <span className="badge" style={{ marginLeft: 6 }}>price ↑</span>}
+                  </td>
+                  <td className="small">{r.cadence}</td>
+                  <td className="num">{fmt(r.medianAmount, { maximumFractionDigits: 2 })}</td>
+                  <td className="num">{fmt(r.monthlyCost)}</td>
+                  <td className="num">{fmt(r.monthlyCost * 12)}</td>
+                  <td className="small">{r.lastDate}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>Total</td><td></td><td></td>
+                <td className="num">{fmt(savings.monthlyTotal)}</td>
+                <td className="num">{fmt(savings.monthlyTotal * 12)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
 
       {AREAS.map(([area, title]) => {
         const items = recs.filter(r => r.area === area)
