@@ -39,7 +39,9 @@ export default function ConnectSimpleFIN() {
     setSummary(null)
     try {
       const startDate = new Date()
-      startDate.setDate(startDate.getDate() - parseInt(days, 10))
+      // SimpleFIN Bridge caps requests at 90 days of history; asking for
+      // exactly 90 trips the cap warning, so stay a day inside it.
+      startDate.setDate(startDate.getDate() - Math.min(parseInt(days, 10), 89))
       const payload = await fetchAccounts(conn.accessUrl, {
         startDate,
         proxyUrl: (conn.proxyUrl || '').trim() || undefined,
@@ -129,8 +131,8 @@ export default function ConnectSimpleFIN() {
             <label className="inline-label">Pull last
               <select value={days} onChange={e => setDays(e.target.value)}>
                 <option value="30">30 days</option>
-                <option value="90">90 days</option>
-                <option value="365">1 year</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days (bridge max)</option>
               </select>
             </label>
             <button className="btn primary" onClick={sync} disabled={busy}>
