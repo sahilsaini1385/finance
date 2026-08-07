@@ -160,19 +160,52 @@ export default function ConnectSimpleFIN() {
 
       {error && <p className="error small">{error}</p>}
       {summary && !busy && (
-        <div className="alert good">
-          <span className="alert-icon"><Icon name="check-circle" size={15} /></span>
-          <div>
-            <strong>Sync complete</strong>
-            <div className="muted small">
-              {summary.accountsCreated} new accounts · {summary.accountsUpdated} balances updated ·{' '}
-              {summary.txAdded} transactions added · {summary.txSkipped} duplicates skipped
+        <>
+          <div className="alert good">
+            <span className="alert-icon"><Icon name="check-circle" size={15} /></span>
+            <div>
+              <strong>Sync complete</strong>
+              <div className="muted small">
+                {summary.accountsCreated} new accounts · {summary.accountsUpdated} balances updated ·{' '}
+                {summary.txAdded} transactions added · {summary.txSkipped} already known
+              </div>
+              {summary.errors.length > 0 && (
+                <div className="error small">SimpleFIN reported: {summary.errors.join('; ')}</div>
+              )}
             </div>
-            {summary.errors.length > 0 && (
-              <div className="error small">SimpleFIN reported: {summary.errors.join('; ')}</div>
-            )}
           </div>
-        </div>
+          {summary.accounts?.length > 0 && (
+            <table className="table" style={{ marginTop: 8 }}>
+              <thead>
+                <tr><th>Account</th><th className="num">Balance</th><th className="num">Txs received</th><th className="num">New</th></tr>
+              </thead>
+              <tbody>
+                {summary.accounts.map(a => (
+                  <tr key={a.simplefinId}>
+                    <td className="small">{a.org} · {a.name}</td>
+                    <td className="num small">{a.balance === null ? '—' : `$${a.balance.toLocaleString()}`}</td>
+                    <td className="num small">{a.received}</td>
+                    <td className="num small">{a.added}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {summary.accounts?.some(a => a.received === 0) && (
+            <div className="alert info" style={{ marginTop: 8 }}>
+              <span className="alert-icon"><Icon name="info" size={15} /></span>
+              <div className="small">
+                Accounts showing <strong>0 transactions received</strong> mean SimpleFIN Bridge hasn't sent
+                transaction data for them (the app shows everything it receives). Common causes: the bridge is
+                still backfilling a newly connected bank (can take up to ~a day — Chase is often slow),
+                the sync window ("Pull last") predates available history, or the bank connection needs
+                re-authentication on the bridge site. Check the account on{' '}
+                <a href="https://beta-bridge.simplefin.org/" target="_blank" rel="noreferrer">SimpleFIN Bridge</a> —
+                if transactions show there but not here, that's an app bug and I want to know about it.
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
