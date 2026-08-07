@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
-import { putFile, deleteFile, openFile, formatBytes } from '../lib/files.js'
+import { putFile, deleteFile, openFile, getFile, formatBytes } from '../lib/files.js'
+import { amortize, extraPaymentScenarios, formatMonths } from '../lib/mortgage.js'
 import FileDrop from './FileDrop.jsx'
 import Icon from './Icon.jsx'
+import AreaChart from './AreaChart.jsx'
 import { useToast } from './Toaster.jsx'
 
 const HOME_DOC_KINDS = ['Mortgage note', 'Closing disclosure', 'Deed / title', 'Home insurance policy', 'Appraisal', 'Inspection report', 'Warranty', 'Renovation receipts', 'Other']
@@ -32,6 +34,8 @@ export default function Home() {
   const [armedId, setArmedId] = useState(null)
   const [bill, setBill] = useState({ month: new Date().toISOString().slice(0, 7), type: 'Electric', amount: '', note: '' })
   const [billFile, setBillFile] = useState(null)
+  const [extracting, setExtractingId] = useState(null)
+  const [extraction, setExtraction] = useState(null) // {docName, fields, picked:Set}
 
   const setHome = payload => dispatch({ type: 'SET_HOME', payload })
 
@@ -62,6 +66,39 @@ export default function Home() {
       },
     })
     toast(`${docKind} uploaded — stored only in this browser`, { kind: 'good' })
+  }
+
+  const extractDoc = async d => {
+    setExtractingId(d.id)
+    setExtraction(null)
+    try {
+      const blob = await getFile(d.id)
+      if (!blob) throw new Error('File not found in this browser.')
+      if (blob.type !== 'application/pdf') throw new Error('Extraction works on PDF documents.')
+      const { extractPdfText, extractMortgageFields } = await import('../lib/extract.js')
+      const text = await extractPdfText(blob)
+      if (text.trim().length < 50) {
+        throw new Error('This PDF has no text layer (likely a scan/photo) — enter the figures manually above.')
+      }
+      const { fields, confidence } = extractMortgageFields(text)
+      if (confidence === 'none') {
+        throw new Error('No mortgage figures recognized — this document may not be a loan disclosure. Enter figures manually above.')
+      }
+      setExtraction({ docName: d.name, fields, picked: new Set(fields.map(f => f.key)) })
+    } catch (e) {
+      toast(e.message, { kind: 'error' })
+    }
+    setExtractingId(null)
+  }
+
+  const applyExtraction = () => {
+    const payload = {}
+    for (const f of extraction.fields) {
+      if (extraction.picked.has(f.key)) payload[f.key] = String(f.value)
+    }
+    setHome(payload)
+    toast(`Applied ${Object.keys(payload).length} fields to Property & mortgage`, { kind: 'good' })
+    setExtraction(null)
   }
 
   const removeDoc = async d => {
@@ -175,9 +212,75 @@ export default function Home() {
         )}
         <p className="muted small" style={{ marginBottom: 0 }}>
           Tip: to count home equity in your net worth, add the home's value as an “other” account and the
-          mortgage as a “mortgage” account in Accounts.
+          mortgage as a “mortgage” account in Accounts. Have your closing disclosure? Upload it below and hit
+          “Extract” to fill these fields automatically.
         </p>
       </div>
+
+      {num(home.mortgageBalance) > 0 && num(home.mortgageRate) > 0 && num(home.monthlyPayment) > 0 && (() => {
+        const { base, scenarios } = extraPaymentScenarios(home.mortgageBalance, home.mortgageRate, home.monthlyPayment)
+        return (
+          <div className="card">
+            <h2><span className="icon-chip"><Icon name="trending-up" /></span> Payoff dashboard</h2>
+            {!base.feasible ? (
+              <div className="alert warning">
+                <span className="alert-icon"><Icon name="alert-triangle" size={15} /></span>
+                <div>Can't project a payoff: {base.reason}. Double-check the rate and the monthly P&amp;I figure (exclude taxes/insurance).</div>
+              </div>
+            ) : (
+              <>
+                <div className="stat-row" style={{ marginTop: 0 }}>
+                  <div className="stat-tile" style={{ cursor: 'default' }}>
+                    <div className="stat-label">Paid off</div>
+                    <div className="stat-value money">
+                      {new Date(base.payoffDate + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })}
+                    </div>
+                    <div className="stat-sub">{formatMonths(base.months)} to go</div>
+                  </div>
+                  <div className="stat-tile" style={{ cursor: 'default' }}>
+                    <div className="stat-label">Interest remaining</div>
+                    <div className="stat-value money">{fmt(base.totalInterest)}</div>
+                    <div className="stat-sub">at {home.mortgageRate}% on {fmt(home.mortgageBalance)}</div>
+                  </div>
+                  <div className="stat-tile" style={{ cursor: 'default' }}>
+                    <div className="stat-label">This month's split</div>
+                    <div className="stat-value money">{fmt(num(home.mortgageBalance) * num(home.mortgageRate) / 1200)} int.</div>
+                    <div className="stat-sub">{fmt(Math.max(0, num(home.monthlyPayment) - num(home.mortgageBalance) * num(home.mortgageRate) / 1200))} to principal</div>
+                  </div>
+                </div>
+                <AreaChart
+                  id="payoff"
+                  points={base.series.map(p => {
+                    const d = new Date()
+                    d.setMonth(d.getMonth() + p.month)
+                    return { x: d.toLocaleString(undefined, { month: 'short', year: 'numeric' }), value: Math.round(p.balance) }
+                  })}
+                  height={120}
+                />
+                <table className="table" style={{ marginTop: 12 }}>
+                  <thead>
+                    <tr><th>Extra per month</th><th>Paid off</th><th className="num">Time saved</th><th className="num">Interest saved</th></tr>
+                  </thead>
+                  <tbody>
+                    {scenarios.map(s => (
+                      <tr key={s.extra}>
+                        <td>+{fmt(s.extra)}</td>
+                        <td className="small">{new Date(s.payoffDate + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })}</td>
+                        <td className="num">{formatMonths(s.monthsSaved)}</td>
+                        <td className="num pos-text">{fmt(s.interestSaved)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="muted small" style={{ marginBottom: 0 }}>
+                  P&amp;I only — taxes and insurance continue separately. Extra principal payments beat most
+                  guaranteed returns at today's rates, but max the 401(k) match and clear credit cards first.
+                </p>
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       <div className="grid-2-forms">
         <div className="card">
@@ -193,7 +296,35 @@ export default function Home() {
             title="Drop mortgage docs, deed, insurance…"
             subtitle="Up to 15MB per file"
           />
-          <div className="trust-note"><Icon name="lock" size={12} /> Stored in this browser only.</div>
+          <div className="trust-note"><Icon name="lock" size={12} /> Stored in this browser only. “Extract” reads PDFs locally too — nothing is uploaded.</div>
+
+          {extraction && (
+            <div className="alert info form-in" style={{ display: 'block', marginTop: 12 }}>
+              <strong>Found in {extraction.docName}</strong> — review, untick anything wrong, then apply:
+              <div style={{ margin: '10px 0' }} className="row gap wrap">
+                {extraction.fields.map(f => (
+                  <label key={f.key} className="check-pill">
+                    <input
+                      type="checkbox"
+                      checked={extraction.picked.has(f.key)}
+                      onChange={() => setExtraction(x => {
+                        const picked = new Set(x.picked)
+                        picked.has(f.key) ? picked.delete(f.key) : picked.add(f.key)
+                        return { ...x, picked }
+                      })}
+                    />
+                    {f.label}: {f.unit === '%' ? `${f.value}%` : fmt(f.value, { maximumFractionDigits: 2 })}
+                  </label>
+                ))}
+              </div>
+              <div className="row gap">
+                <button className="btn primary small" onClick={applyExtraction} disabled={extraction.picked.size === 0}>
+                  Apply to Property &amp; mortgage
+                </button>
+                <button className="btn ghost small" onClick={() => setExtraction(null)}>Dismiss</button>
+              </div>
+            </div>
+          )}
           {docs.length > 0 && (
             <table className="table" style={{ marginTop: 12 }}>
               <thead><tr><th>Document</th><th>Type</th><th className="num">Size</th><th></th></tr></thead>
@@ -206,6 +337,10 @@ export default function Home() {
                     <td className="row-actions">
                       <button className="btn ghost small" onClick={() => openFile(d.id, d.name).catch(e => toast(e.message, { kind: 'error' }))}>
                         <Icon name="eye" size={13} />
+                      </button>
+                      <button className="btn ghost small" disabled={extracting === d.id} onClick={() => extractDoc(d)}>
+                        {extracting === d.id ? <span className="spinner" /> : <Icon name="sparkle" size={13} />}
+                        {extracting === d.id ? 'Reading…' : 'Extract'}
                       </button>
                       <button className={armedId === d.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => removeDoc(d)}>
                         {armedId === d.id ? 'Confirm?' : 'Delete'}
