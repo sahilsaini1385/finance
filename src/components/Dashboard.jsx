@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { computeTotals, getRecommendations } from '../lib/advisor.js'
+import { detectRecurring, upcomingBills } from '../lib/savings.js'
 import Icon from './Icon.jsx'
+import AreaChart from './AreaChart.jsx'
 
 function monthKey(dateStr) {
   return dateStr ? dateStr.slice(0, 7) : ''
@@ -80,6 +82,11 @@ export default function Dashboard({ onNavigate }) {
   const recs = getRecommendations(state)
   const alerts = recs.filter(r => r.severity === 'critical' || r.severity === 'warning')
 
+  const upcoming = useMemo(() => {
+    const recurring = detectRecurring(state.transactions)
+    return upcomingBills(recurring, state.insurance, 30)
+  }, [state.transactions, state.insurance])
+
   const maxFlow = Math.max(1, ...months.map(k => Math.max(flows[k].income, flows[k].expense)))
   const maxCat = Math.max(1, ...spendByCat.map(([, v]) => v))
   const hasTx = state.transactions.length > 0
@@ -146,6 +153,28 @@ export default function Dashboard({ onNavigate }) {
           )}
         </div>
         {!hasAccounts && <div className="hero-sub">Add an account to start</div>}
+        {state.history.length >= 2 ? (
+          <>
+            <AreaChart
+              id="nw"
+              points={state.history.map(h => ({
+                x: new Date(h.date + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+                value: h.netWorth,
+              }))}
+              height={120}
+            />
+            <div className="hero-sub">
+              Since {new Date(state.history[0].date + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}:{' '}
+              {(() => {
+                const d = state.history[state.history.length - 1].netWorth - state.history[0].netWorth
+                return `${d >= 0 ? '+' : '−'}${fmt(Math.abs(Math.round(d)))}`
+              })()}
+              {' '}· snapshots record automatically whenever balances change
+            </div>
+          </>
+        ) : hasAccounts ? (
+          <div className="hero-sub">History starts now — your net-worth chart draws itself as balances update over the coming days.</div>
+        ) : null}
       </div>
 
       <div className="stat-row">
@@ -268,6 +297,28 @@ export default function Dashboard({ onNavigate }) {
           )}
         </div>
       </div>
+
+      {upcoming.bills.length > 0 && (
+        <div className="card">
+          <h2>
+            <span className="icon-chip"><Icon name="calendar" /></span>
+            Upcoming bills — next 30 days · ~{fmt(upcoming.total)}
+          </h2>
+          <table className="table">
+            <thead><tr><th>Due</th><th>Bill</th><th className="num">Amount</th></tr></thead>
+            <tbody>
+              {upcoming.bills.slice(0, 10).map((b, i) => (
+                <tr key={i}>
+                  <td className="small nowrap">{new Date(b.date + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</td>
+                  <td>{b.label} {b.kind === 'renewal' && <span className="badge">renewal — re-shop</span>}</td>
+                  <td className="num">{fmt(b.amount, { maximumFractionDigits: 2 })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {upcoming.bills.length > 10 && <p className="muted small">…and {upcoming.bills.length - 10} more. Projected from your detected recurring charges.</p>}
+        </div>
+      )}
 
       {state.insurance.length > 0 && (
         <div className="card">

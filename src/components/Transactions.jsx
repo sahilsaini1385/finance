@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
-import { useStore, fmtCents } from '../store.jsx'
+import { useStore, uid, fmtCents } from '../store.jsx'
 import { CATEGORIES } from '../lib/categorize.js'
+import { normalizeMerchant } from '../lib/savings.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -21,6 +22,25 @@ export default function Transactions() {
       .sort((a, b) => (a.date < b.date ? 1 : -1))
       .slice(0, 500)
   }, [state.transactions, filterAccount, filterCategory, search])
+
+  const changeCategory = (t, category) => {
+    dispatch({ type: 'UPDATE_TRANSACTION', payload: { id: t.id, category } })
+    const merchant = normalizeMerchant(t.description)
+    if (!merchant) return
+    const siblings = state.transactions.filter(
+      x => x.id !== t.id && normalizeMerchant(x.description) === merchant && x.category !== category,
+    ).length
+    toast(`Moved to ${category}`, {
+      action: {
+        label: siblings > 0 ? `Always (${siblings + 1} txs)` : 'Always',
+        onClick: () => {
+          dispatch({ type: 'ADD_RULE', payload: { id: uid(), match: merchant, category } })
+          dispatch({ type: 'APPLY_RULE', payload: { match: merchant, category, matcher: normalizeMerchant } })
+          toast(`Rule saved: ${merchant.toLowerCase()} → ${category}`, { kind: 'good' })
+        },
+      },
+    })
+  }
 
   const removeTx = t => {
     dispatch({ type: 'DELETE_TRANSACTION', payload: t.id })
@@ -96,7 +116,7 @@ export default function Transactions() {
                     <select
                       value={t.category}
                       aria-label="Category"
-                      onChange={e => dispatch({ type: 'UPDATE_TRANSACTION', payload: { id: t.id, category: e.target.value } })}
+                      onChange={e => changeCategory(t, e.target.value)}
                     >
                       {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                     </select>
@@ -116,6 +136,31 @@ export default function Transactions() {
           <p className="muted small">Showing the most recent 500 matches — narrow the filters to see older activity.</p>
         )}
       </div>
+
+      {state.rules.length > 0 && (
+        <div className="card">
+          <details className="advanced">
+            <summary>Your categorization rules ({state.rules.length})</summary>
+            <table className="table" style={{ marginTop: 8 }}>
+              <thead><tr><th>When merchant is</th><th>Categorize as</th><th></th></tr></thead>
+              <tbody>
+                {state.rules.map(r => (
+                  <tr key={r.id}>
+                    <td className="small">{r.match.toLowerCase()}</td>
+                    <td className="small">{r.category}</td>
+                    <td className="row-actions">
+                      <button className="btn ghost small" aria-label="Delete rule" onClick={() => dispatch({ type: 'DELETE_RULE', payload: r.id })}>
+                        <Icon name="x" size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted small">Rules apply to every future sync and import. Created when you pick “Always” after changing a category.</p>
+          </details>
+        </div>
+      )}
     </div>
   )
 }

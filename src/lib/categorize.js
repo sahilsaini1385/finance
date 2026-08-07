@@ -36,7 +36,16 @@ const RULES = [
   ['Education', /tuition|university|college|udemy|coursera/i],
 ]
 
-export function categorize(description, bankCategory, amount) {
+import { normalizeMerchant } from './savings.js'
+
+// User-defined rules (matched on normalized merchant) always win over the
+// built-in keyword heuristics below.
+export function categorize(description, bankCategory, amount, userRules = []) {
+  if (userRules.length > 0) {
+    const merchant = normalizeMerchant(description)
+    const hit = userRules.find(r => r.match === merchant)
+    if (hit) return hit.category
+  }
   for (const [cat, re] of RULES) {
     if (re.test(description)) return cat
   }

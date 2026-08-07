@@ -60,7 +60,7 @@ export default function ImportCSV({ onDone }) {
       date: t.date,
       description: t.description,
       amount: t.amount,
-      category: categorize(t.description, t.bankCategory, t.amount),
+      category: categorize(t.description, t.bankCategory, t.amount, state.rules || []),
       source: preview.format,
       hash: txHash(targetId, t),
     }))

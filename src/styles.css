@@ -1263,6 +1263,64 @@ textarea:focus-visible {
   margin: 0;
 }
 
+/* ---------- area chart ---------- */
+.area-chart {
+  position: relative;
+  margin-top: 16px;
+}
+.chart-tip {
+  position: absolute;
+  top: -8px;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
+.chart-tip span {
+  color: var(--text-3);
+}
+
+.check-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-full);
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease);
+}
+.check-pill:has(input:checked) {
+  background: var(--tint-accent);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.check-pill input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.goal-numbers {
+  font-size: 15px;
+}
+.goal-numbers strong {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
 .main-col {
   min-width: 0;
   display: flex;

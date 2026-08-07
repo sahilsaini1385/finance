@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react'
+import { computeTotals } from './lib/advisor.js'
 
 const STORAGE_KEY = 'finance-app-v1'
 
@@ -10,6 +11,9 @@ export const initialState = {
     simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
   },
   documents: [],     // {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?, notes}
+  history: [],       // net-worth snapshots: {date, netWorth, cash, investments, debt} — one per day
+  rules: [],         // categorization rules: {id, match (normalized merchant), category}
+  goals: [],         // {id, name, target, accountIds: [], targetDate, note}
   homeBills: [],     // {id, month: 'YYYY-MM', type, amount, hasFile, note}
   budgets: {},       // {category: monthlyAmount}
   home: {
@@ -82,6 +86,30 @@ function reducer(state, action) {
       return { ...state, insurance: state.insurance.map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
     case 'DELETE_INSURANCE':
       return { ...state, insurance: state.insurance.filter(p => p.id !== action.payload) }
+    case 'RECORD_SNAPSHOT': {
+      const snap = action.payload // {date, netWorth, cash, investments, debt}
+      const rest = state.history.filter(h => h.date !== snap.date)
+      return { ...state, history: [...rest, snap].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-730) }
+    }
+    case 'ADD_RULE': {
+      const rest = state.rules.filter(r => r.match !== action.payload.match)
+      return { ...state, rules: [...rest, action.payload] }
+    }
+    case 'DELETE_RULE':
+      return { ...state, rules: state.rules.filter(r => r.id !== action.payload) }
+    case 'APPLY_RULE': {
+      const { match, category, matcher } = action.payload
+      return {
+        ...state,
+        transactions: state.transactions.map(t => (matcher(t.description) === match ? { ...t, category } : t)),
+      }
+    }
+    case 'ADD_GOAL':
+      return { ...state, goals: [...state.goals, action.payload] }
+    case 'UPDATE_GOAL':
+      return { ...state, goals: state.goals.map(g => (g.id === action.payload.id ? { ...g, ...action.payload } : g)) }
+    case 'DELETE_GOAL':
+      return { ...state, goals: state.goals.filter(g => g.id !== action.payload) }
     case 'ADD_DOCUMENT':
       return { ...state, documents: [...state.documents, action.payload] }
     case 'UPDATE_DOCUMENT':
@@ -155,6 +183,19 @@ export function StoreProvider({ children }) {
       console.error('Failed to save data', e)
     }
   }, [state])
+
+  // Net-worth history: upsert one snapshot per day whenever balances move.
+  useEffect(() => {
+    if (state.accounts.length === 0) return
+    const t = computeTotals(state)
+    const today = new Date().toISOString().slice(0, 10)
+    const existing = state.history?.find(h => h.date === today)
+    if (existing && Math.abs(existing.netWorth - t.netWorth) < 0.005) return
+    dispatch({
+      type: 'RECORD_SNAPSHOT',
+      payload: { date: today, netWorth: t.netWorth, cash: t.cash, investments: t.investments, debt: t.debt },
+    })
+  }, [state.accounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <StoreContext.Provider value={{ state, dispatch }}>{children}</StoreContext.Provider>
 }

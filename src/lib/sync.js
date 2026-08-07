@@ -72,7 +72,7 @@ export function buildSyncPatch(payload, state) {
         continue
       }
       existingHashes.add(hash)
-      transactions.push({ ...row, id: uid(), category: categorize(description, '', amount) })
+      transactions.push({ ...row, id: uid(), category: categorize(description, '', amount, state.rules || []) })
       added++
     }
 

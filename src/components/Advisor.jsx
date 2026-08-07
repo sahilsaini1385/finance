@@ -2,7 +2,10 @@ import React, { useMemo } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { getRecommendations, LIMITS_2026 } from '../lib/advisor.js'
 import { getSavingsInsights } from '../lib/savings.js'
+import { projectFI, FI_ASSUMPTIONS } from '../lib/projection.js'
+import { computeTotals } from '../lib/advisor.js'
 import Icon from './Icon.jsx'
+import AreaChart from './AreaChart.jsx'
 
 const SEV_ICON = { critical: 'octagon-alert', warning: 'alert-triangle', info: 'lightbulb', good: 'check-circle' }
 const AREAS = [
@@ -40,6 +43,8 @@ export default function Advisor() {
   const setP = payload => dispatch({ type: 'SET_PROFILE', payload })
   const savings = useMemo(() => getSavingsInsights(state), [state.transactions])
   const recs = [...savings.recs, ...getRecommendations(state)]
+  const totals = computeTotals(state)
+  const fi = projectFI(state, totals.investments)
 
   const answered = PROFILE_FIELDS.filter(k => {
     const v = p[k]
@@ -157,6 +162,51 @@ export default function Advisor() {
             <Field label="Planned IRA contribution this year" k="iraContribution" profile={p} onChange={setP} money />
           </div>
         </details>
+      </div>
+
+      <div className="card">
+        <h2>
+          <span className="icon-chip"><Icon name="trending-up" /></span>
+          Path to financial independence
+        </h2>
+        {!fi.ready ? (
+          <p className="muted small" style={{ margin: 0 }}>
+            Fill in your {fi.missing.join(' and ')} in the profile above to see when your investments could cover
+            your lifestyle on their own.
+          </p>
+        ) : (
+          <>
+            <div className="goal-numbers money">
+              {fi.alreadyThere ? (
+                <strong>You're there — your portfolio already covers ~{fmt(fi.annualExpenses)}/yr of spending.</strong>
+              ) : fi.fiAge ? (
+                <>
+                  <strong>Financially independent around age {fi.fiAge}</strong>
+                  <span className="muted"> · target {fmt(fi.fiNumber)} ({fmt(fi.annualExpenses)}/yr × 25) · {fi.years} years away</span>
+                </>
+              ) : (
+                <span>
+                  At the current contribution rate ({fmt(fi.annualContrib)}/yr), the {fmt(fi.fiNumber)} target is
+                  more than {FI_ASSUMPTIONS.maxYears} years out — raising savings rate moves this more than
+                  raising returns.
+                </span>
+              )}
+            </div>
+            {fi.series.length > 2 && (
+              <AreaChart
+                id="fi"
+                points={fi.series.map(p => ({ x: `age ${p.age}`, value: Math.round(p.value) }))}
+                height={120}
+                marker={fi.fiAge ? fi.series.findIndex(p => p.age === fi.fiAge) : null}
+              />
+            )}
+            <p className="muted small" style={{ marginBottom: 0 }}>
+              Assumes {(FI_ASSUMPTIONS.realGrowth * 100).toFixed(0)}% real (after-inflation) growth,
+              the {(FI_ASSUMPTIONS.withdrawalRate * 100).toFixed(0)}% rule, and today's contributions
+              ({fmt(fi.annualContrib)}/yr incl. employer match) held constant — a compass, not a guarantee.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="card">
