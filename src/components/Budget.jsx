@@ -5,9 +5,10 @@ import {
   monthActivity, daysInfo, paceProjection, computeSafeToSpend, sinkingTotal,
   allCategories, EXCLUDED,
 } from '../lib/budget.js'
-import { detectRecurring, normalizeMerchant } from '../lib/savings.js'
+import { detectRecurring } from '../lib/savings.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
+import { useAutoCategorize } from './useAutoCategorize.js'
 
 function shiftMonth(month, delta) {
   const d = new Date(month + '-02')
@@ -101,21 +102,7 @@ export default function Budget() {
       { kind: applied > 0 ? 'good' : 'info' })
   }
 
-  const reviewTx = (t, category) => {
-    dispatch({ type: 'UPDATE_TRANSACTION', payload: { id: t.id, category } })
-    const merchant = normalizeMerchant(t.description)
-    if (!merchant) return
-    toast(`Moved to ${category}`, {
-      action: {
-        label: 'Always',
-        onClick: () => {
-          dispatch({ type: 'ADD_RULE', payload: { id: uid(), match: merchant, category } })
-          dispatch({ type: 'APPLY_RULE', payload: { match: merchant, category, matcher: normalizeMerchant } })
-          toast(`Rule saved: ${merchant.toLowerCase()} → ${category}`, { kind: 'good' })
-        },
-      },
-    })
-  }
+  const reviewTx = useAutoCategorize()
 
   const addCategory = e => {
     e.preventDefault()

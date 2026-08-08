@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react'
-import { useStore, uid, fmtCents } from '../store.jsx'
+import { useStore, fmtCents } from '../store.jsx'
 import { allCategories } from '../lib/budget.js'
-import { normalizeMerchant } from '../lib/savings.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
+import { useAutoCategorize } from './useAutoCategorize.js'
 
 export default function Transactions() {
   const { state, dispatch } = useStore()
@@ -23,24 +23,7 @@ export default function Transactions() {
       .slice(0, 500)
   }, [state.transactions, filterAccount, filterCategory, search])
 
-  const changeCategory = (t, category) => {
-    dispatch({ type: 'UPDATE_TRANSACTION', payload: { id: t.id, category } })
-    const merchant = normalizeMerchant(t.description)
-    if (!merchant) return
-    const siblings = state.transactions.filter(
-      x => x.id !== t.id && normalizeMerchant(x.description) === merchant && x.category !== category,
-    ).length
-    toast(`Moved to ${category}`, {
-      action: {
-        label: siblings > 0 ? `Always (${siblings + 1} txs)` : 'Always',
-        onClick: () => {
-          dispatch({ type: 'ADD_RULE', payload: { id: uid(), match: merchant, category } })
-          dispatch({ type: 'APPLY_RULE', payload: { match: merchant, category, matcher: normalizeMerchant } })
-          toast(`Rule saved: ${merchant.toLowerCase()} → ${category}`, { kind: 'good' })
-        },
-      },
-    })
-  }
+  const changeCategory = useAutoCategorize()
 
   const removeTx = t => {
     dispatch({ type: 'DELETE_TRANSACTION', payload: t.id })
@@ -158,7 +141,7 @@ export default function Transactions() {
                 ))}
               </tbody>
             </table>
-            <p className="muted small">Rules apply to every future sync and import. Created when you pick “Always” after changing a category.</p>
+            <p className="muted small">Created automatically whenever you change a transaction's category — the merchant maps to that category for every future sync and import. Delete a rule here to stop it.</p>
           </details>
         </div>
       )}
