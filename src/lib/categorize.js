@@ -15,6 +15,7 @@ export const CATEGORIES = [
   'Transfers',
   'Fees',
   'Education',
+  'Giving',
   'Work expenses',
   'Other',
 ]
@@ -35,6 +36,7 @@ const RULES = [
   ['Transfers', /transfer|zelle|venmo|paypal|cash app|wire |ach pmt|payment thank you|autopay|online payment/i],
   ['Fees', /fee|service charge|overdraft|atm /i],
   ['Education', /tuition|university|college|udemy|coursera/i],
+  ['Giving', /donat|church|tithe|goodwill|red cross|unicef|salvation army|st jude|gofundme|charity|world vision|habitat for humanity/i],
 ]
 
 import { normalizeMerchant } from './savings.js'

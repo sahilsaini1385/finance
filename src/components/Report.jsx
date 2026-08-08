@@ -3,12 +3,17 @@ import { useStore, fmt } from '../store.jsx'
 import { buildMonthlyReport, shiftMonth } from '../lib/report.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
+import YearReport from './YearReport.jsx'
+import TaxSummary from './TaxSummary.jsx'
 
 export default function Report() {
   const { state, dispatch } = useStore()
   const toast = useToast()
   const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisYear = new Date().getFullYear()
+  const [mode, setMode] = useState('month')
   const [month, setMonth] = useState(thisMonth)
+  const [year, setYear] = useState(thisYear)
   const isCurrent = month === thisMonth
 
   const saved = (state.reports || []).find(r => r.month === month)
@@ -34,29 +39,58 @@ export default function Report() {
   const hasData = r.income > 0 || r.spend > 0
   const archive = [...(state.reports || [])].sort((a, b) => (a.month < b.month ? 1 : -1))
 
+  const modeBtn = (id, label) => (
+    <button className={mode === id ? 'btn small primary' : 'btn small'} onClick={() => setMode(id)}>{label}</button>
+  )
+
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>{monthLabel} in review</h1>
+          <h1>
+            {mode === 'month' ? `${monthLabel} in review` : mode === 'year' ? `${year} in review` : `Tax summary — ${year}`}
+          </h1>
           <p className="muted small">
-            {isCurrent
-              ? 'Live — this month is still in progress; it archives automatically when it closes.'
-              : saved
-                ? `Archived ${new Date(saved.generatedAt).toLocaleDateString()} — frozen month-end record.`
-                : 'Everything your money did this month, on one page.'}
+            {mode === 'tax'
+              ? 'Annual totals a preparer actually asks for, from your categorized data.'
+              : mode === 'year'
+                ? 'The whole year at a glance.'
+                : isCurrent
+                  ? 'Live — this month is still in progress; it archives automatically when it closes.'
+                  : saved
+                    ? `Archived ${new Date(saved.generatedAt).toLocaleDateString()} — frozen month-end record.`
+                    : 'Everything your money did this month, on one page.'}
           </p>
         </div>
-        <div className="row gap">
-          {!isCurrent && saved && (
-            <button className="btn small" onClick={refreshSnapshot} title="Rebuild this archive from current data (late transactions, recategorizations)">
-              Refresh snapshot
-            </button>
+        <div className="row gap wrap">
+          {modeBtn('month', 'Month')}
+          {modeBtn('year', 'Year')}
+          {modeBtn('tax', 'Tax')}
+          {mode === 'month' ? (
+            <>
+              {!isCurrent && saved && (
+                <button className="btn small" onClick={refreshSnapshot} title="Rebuild this archive from current data (late transactions, recategorizations)">
+                  Refresh snapshot
+                </button>
+              )}
+              <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, -1))} aria-label="Previous month">←</button>
+              <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= thisMonth} aria-label="Next month">→</button>
+            </>
+          ) : (
+            <>
+              <button className="btn small" onClick={() => setYear(y => y - 1)} aria-label="Previous year">←</button>
+              <strong className="nowrap">{year}</strong>
+              <button className="btn small" onClick={() => setYear(y => y + 1)} disabled={year >= thisYear} aria-label="Next year">→</button>
+            </>
           )}
-          <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, -1))} aria-label="Previous month">←</button>
-          <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= thisMonth} aria-label="Next month">→</button>
         </div>
       </div>
+
+      {mode === 'year' && <YearReport year={year} />}
+      {mode === 'tax' && <TaxSummary year={year} />}
+      {mode === 'month' && (
+      <>
+
 
       {archive.length > 0 && (
         <div className="chip-row">
@@ -185,6 +219,8 @@ export default function Report() {
             </div>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   )
