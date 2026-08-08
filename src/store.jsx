@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react'
 import { computeTotals } from './lib/advisor.js'
+import { buildMonthlyReport, reportHasData } from './lib/report.js'
 
 const STORAGE_KEY = 'finance-app-v1'
 
@@ -12,6 +13,7 @@ export const initialState = {
   },
   documents: [],     // {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?, notes}
   history: [],       // net-worth snapshots: {date, netWorth, cash, investments, debt} — one per day
+  reports: [],       // auto-archived month-end reports (see lib/report.js)
   rules: [],         // categorization rules: {id, match (normalized merchant), category}
   goals: [],         // {id, name, target, accountIds: [], targetDate, note}
   homeBills: [],     // {id, month: 'YYYY-MM', type, amount, hasFile, note}
@@ -91,6 +93,10 @@ function reducer(state, action) {
       return { ...state, insurance: state.insurance.map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
     case 'DELETE_INSURANCE':
       return { ...state, insurance: state.insurance.filter(p => p.id !== action.payload) }
+    case 'SAVE_REPORT': {
+      const rest = (state.reports || []).filter(r => r.month !== action.payload.month)
+      return { ...state, reports: [...rest, action.payload].sort((a, b) => (a.month < b.month ? -1 : 1)).slice(-36) }
+    }
     case 'RECORD_SNAPSHOT': {
       const snap = action.payload // {date, netWorth, cash, investments, debt}
       const rest = state.history.filter(h => h.date !== snap.date)
@@ -238,6 +244,22 @@ export function StoreProvider({ children }) {
       console.error('Failed to save data', e)
     }
   }, [state])
+
+  // Month-end report archiving: when the app runs after a month has closed,
+  // archive that month's report (backfilling up to a year of missed months).
+  useEffect(() => {
+    if (state.transactions.length === 0) return
+    const thisMonth = new Date().toISOString().slice(0, 7)
+    const have = new Set((state.reports || []).map(r => r.month))
+    const closedMonths = [...new Set(state.transactions.map(t => t.date?.slice(0, 7)).filter(Boolean))]
+      .filter(m => m < thisMonth && !have.has(m))
+      .sort()
+      .slice(-12)
+    for (const m of closedMonths) {
+      const report = buildMonthlyReport(state, m)
+      if (reportHasData(report)) dispatch({ type: 'SAVE_REPORT', payload: report })
+    }
+  }, [state.transactions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Net-worth history: upsert one snapshot per day whenever balances move.
   useEffect(() => {

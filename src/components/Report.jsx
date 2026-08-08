@@ -1,98 +1,78 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
-import { normalizeMerchant, detectRecurring } from '../lib/savings.js'
-import { effectiveBudgets } from '../lib/budget.js'
+import { buildMonthlyReport, shiftMonth } from '../lib/report.js'
 import Icon from './Icon.jsx'
-
-const EXCLUDED = ['Transfers', 'Investments']
-
-function shiftMonth(month, delta) {
-  const d = new Date(month + '-02')
-  d.setMonth(d.getMonth() + delta)
-  return d.toISOString().slice(0, 7)
-}
-
-function monthStats(transactions, month) {
-  let income = 0
-  let spend = 0
-  const byCat = {}
-  const byMerchant = {}
-  const biggest = []
-  for (const t of transactions) {
-    if (!t.date?.startsWith(month)) continue
-    if (t.category === 'Income' && t.amount > 0) {
-      income += t.amount
-      continue
-    }
-    if (EXCLUDED.includes(t.category)) continue
-    const amt = -t.amount // refunds/reimbursements come in positive and net out
-    spend += amt
-    byCat[t.category] = (byCat[t.category] || 0) + amt
-    if (t.amount < 0) {
-      const m = normalizeMerchant(t.description)
-      if (m) byMerchant[m] = (byMerchant[m] || 0) + amt
-      biggest.push(t)
-    }
-  }
-  for (const c of Object.keys(byCat)) if (byCat[c] < 0) delete byCat[c]
-  if (spend < 0) spend = 0
-  biggest.sort((a, b) => a.amount - b.amount)
-  return { income, spend, byCat, byMerchant, biggest: biggest.slice(0, 3) }
-}
-
-// Net-worth change across the month from history snapshots.
-function netWorthDelta(history, month) {
-  const inMonth = history.filter(h => h.date.startsWith(month))
-  if (inMonth.length === 0) return null
-  const before = history.filter(h => h.date < month + '-01')
-  const start = before.length > 0 ? before[before.length - 1] : inMonth[0]
-  const end = inMonth[inMonth.length - 1]
-  if (start.date === end.date) return null
-  return end.netWorth - start.netWorth
-}
+import { useToast } from './Toaster.jsx'
 
 export default function Report() {
-  const { state } = useStore()
+  const { state, dispatch } = useStore()
+  const toast = useToast()
   const thisMonth = new Date().toISOString().slice(0, 7)
   const [month, setMonth] = useState(thisMonth)
-  const prevMonth = shiftMonth(month, -1)
+  const isCurrent = month === thisMonth
 
-  const cur = useMemo(() => monthStats(state.transactions, month), [state.transactions, month])
-  const prev = useMemo(() => monthStats(state.transactions, prevMonth), [state.transactions, prevMonth])
-  const nwDelta = useMemo(() => netWorthDelta(state.history || [], month), [state.history, month])
+  const saved = (state.reports || []).find(r => r.month === month)
+  const live = useMemo(
+    () => (isCurrent || !saved ? buildMonthlyReport(state, month) : null),
+    [state.transactions, state.history, month, isCurrent, saved],
+  )
+  // Closed months render their archived record; the current month is live.
+  const r = !isCurrent && saved ? saved : live
 
-  const subsMonthly = useMemo(() => {
-    const recurring = detectRecurring(state.transactions)
-    return recurring.filter(r => r.cadence === 'monthly' && r.medianAmount <= 100)
-      .reduce((s, r) => s + r.monthlyCost, 0)
-  }, [state.transactions])
+  const refreshSnapshot = () => {
+    dispatch({ type: 'SAVE_REPORT', payload: buildMonthlyReport(state, month) })
+    toast(`Report for ${monthLabel} re-archived with today's data`, { kind: 'good' })
+  }
 
-  const net = cur.income - cur.spend
-  const savingsRate = cur.income > 0 ? (net / cur.income) * 100 : null
+  const net = r.income - r.spend
+  const savingsRate = r.income > 0 ? (net / r.income) * 100 : null
   const monthLabel = new Date(month + '-02').toLocaleString(undefined, { month: 'long', year: 'numeric' })
-  const budgets = effectiveBudgets(state, month)
-
-  const cats = Object.entries(cur.byCat).sort((a, b) => b[1] - a[1])
+  const cats = Object.entries(r.byCat).sort((a, b) => b[1] - a[1])
   const maxCat = Math.max(1, ...cats.map(([, v]) => v))
-  const merchants = Object.entries(cur.byMerchant).sort((a, b) => b[1] - a[1]).slice(0, 5)
-
-  const overBudget = cats.filter(([c, v]) => budgets[c] && v > budgets[c])
-  const underBudget = Object.entries(budgets).filter(([c, b]) => (cur.byCat[c] || 0) <= b)
-
-  const hasData = cur.income > 0 || cur.spend > 0
+  const overBudget = cats.filter(([c, v]) => r.budgets[c] && v > r.budgets[c])
+  const underBudget = Object.entries(r.budgets).filter(([c, b]) => (r.byCat[c] || 0) <= b)
+  const hasData = r.income > 0 || r.spend > 0
+  const archive = [...(state.reports || [])].sort((a, b) => (a.month < b.month ? 1 : -1))
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>{monthLabel} in review</h1>
-          <p className="muted small">Everything your money did this month, on one page.</p>
+          <p className="muted small">
+            {isCurrent
+              ? 'Live — this month is still in progress; it archives automatically when it closes.'
+              : saved
+                ? `Archived ${new Date(saved.generatedAt).toLocaleDateString()} — frozen month-end record.`
+                : 'Everything your money did this month, on one page.'}
+          </p>
         </div>
         <div className="row gap">
+          {!isCurrent && saved && (
+            <button className="btn small" onClick={refreshSnapshot} title="Rebuild this archive from current data (late transactions, recategorizations)">
+              Refresh snapshot
+            </button>
+          )}
           <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, -1))} aria-label="Previous month">←</button>
           <button className="btn small" onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= thisMonth} aria-label="Next month">→</button>
         </div>
       </div>
+
+      {archive.length > 0 && (
+        <div className="chip-row">
+          <span>Saved reports:</span>
+          {archive.slice(0, 12).map(rep => (
+            <button
+              key={rep.month}
+              className="chip"
+              style={rep.month === month ? { outline: '2px solid var(--accent)' } : undefined}
+              onClick={() => setMonth(rep.month)}
+            >
+              {new Date(rep.month + '-02').toLocaleString(undefined, { month: 'short', year: '2-digit' })}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!hasData ? (
         <div className="card">
@@ -107,15 +87,15 @@ export default function Report() {
           <div className="stat-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
             <div className="stat-tile" style={{ cursor: 'default' }}>
               <div className="stat-label">Income</div>
-              <div className="stat-value money pos-text">{fmt(cur.income)}</div>
-              <div className="stat-sub">{prev.income > 0 ? `${fmt(prev.income)} last month` : '—'}</div>
+              <div className="stat-value money pos-text">{fmt(r.income)}</div>
+              <div className="stat-sub">{r.prev.income > 0 ? `${fmt(r.prev.income)} last month` : '—'}</div>
             </div>
             <div className="stat-tile" style={{ cursor: 'default' }}>
               <div className="stat-label">Spending</div>
-              <div className="stat-value money">{fmt(cur.spend)}</div>
+              <div className="stat-value money">{fmt(r.spend)}</div>
               <div className="stat-sub">
-                {prev.spend > 0
-                  ? `${cur.spend <= prev.spend ? '↓' : '↑'} ${fmt(Math.abs(cur.spend - prev.spend))} vs last month`
+                {r.prev.spend > 0
+                  ? `${r.spend <= r.prev.spend ? '↓' : '↑'} ${fmt(Math.abs(r.spend - r.prev.spend))} vs last month`
                   : '—'}
               </div>
             </div>
@@ -129,9 +109,9 @@ export default function Report() {
             <div className="stat-tile" style={{ cursor: 'default' }}>
               <div className="stat-label">Net worth</div>
               <div className="stat-value money">
-                {nwDelta === null ? '—' : `${nwDelta >= 0 ? '+' : '−'}${fmt(Math.abs(nwDelta))}`}
+                {r.nwDelta === null || r.nwDelta === undefined ? '—' : `${r.nwDelta >= 0 ? '+' : '−'}${fmt(Math.abs(r.nwDelta))}`}
               </div>
-              <div className="stat-sub">{nwDelta === null ? 'needs snapshots in this month' : 'change this month'}</div>
+              <div className="stat-sub">{r.nwDelta === null || r.nwDelta === undefined ? 'needs snapshots in this month' : 'change this month'}</div>
             </div>
           </div>
 
@@ -140,8 +120,8 @@ export default function Report() {
               <h2>Spending by category</h2>
               <div className="cat-chart">
                 {cats.map(([cat, v]) => {
-                  const prevV = prev.byCat[cat] || 0
-                  const b = budgets[cat]
+                  const prevV = r.prev.byCat[cat] || 0
+                  const b = r.budgets[cat]
                   return (
                     <div key={cat} className="cat-row" style={{ gridTemplateColumns: '110px 1fr 150px' }}>
                       <span className="cat-name">{cat}</span>
@@ -164,19 +144,19 @@ export default function Report() {
               {(overBudget.length > 0 || underBudget.length > 0) && (
                 <p className="muted small" style={{ marginBottom: 0 }}>
                   {overBudget.length > 0 && <>Over budget: {overBudget.map(([c]) => c).join(', ')}. </>}
-                  {underBudget.length > 0 && <>On track: {underBudget.length} of {Object.keys(budgets).length} budgeted categories.</>}
+                  {underBudget.length > 0 && <>On track: {underBudget.length} of {Object.keys(r.budgets).length} budgeted categories.</>}
                 </p>
               )}
             </div>
 
             <div className="card">
               <h2>Top merchants</h2>
-              {merchants.length === 0 ? (
+              {r.topMerchants.length === 0 ? (
                 <p className="muted small">No merchant data this month.</p>
               ) : (
                 <table className="table">
                   <tbody>
-                    {merchants.map(([m, v]) => (
+                    {r.topMerchants.map(([m, v]) => (
                       <tr key={m}>
                         <td>{m.toLowerCase()}</td>
                         <td className="num">{fmt(v)}</td>
@@ -188,8 +168,8 @@ export default function Report() {
               <h2 style={{ marginTop: 16 }}>Largest transactions</h2>
               <table className="table">
                 <tbody>
-                  {cur.biggest.map(t => (
-                    <tr key={t.id}>
+                  {r.biggest.map((t, i) => (
+                    <tr key={i}>
                       <td className="small nowrap">{t.date}</td>
                       <td className="desc small">{t.description}</td>
                       <td className="num">{fmt(-t.amount)}</td>
@@ -197,9 +177,9 @@ export default function Report() {
                   ))}
                 </tbody>
               </table>
-              {subsMonthly > 0 && (
+              {r.subsMonthly > 0 && (
                 <p className="muted small" style={{ marginBottom: 0 }}>
-                  Recurring subscriptions ran ~{fmt(subsMonthly)} this month — the full list lives in the Advisor.
+                  Recurring subscriptions ran ~{fmt(r.subsMonthly)} this month — the full list lives in the Advisor.
                 </p>
               )}
             </div>
