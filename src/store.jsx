@@ -37,6 +37,19 @@ export const initialState = {
     insuranceAnnual: '',
   },
   insurance: [],     // {id, type, provider, policyName, coverageAmount, premium, premiumFreq, deductible, renewalDate, notes}
+  retirement: {      // Boldin-style planner settings (blank = use defaults/estimates)
+    retireAge: '',
+    lifeExpectancy: '',
+    spendingMonthly: '',
+    ssClaimAge: '67',
+    ssMonthlyOverride: '',
+    spouseSsMonthlyOverride: '',
+    pensionMonthly: '',
+    extraMonthlySavings: '',
+    expectedReturn: '',
+    retiredReturn: '',
+    volatility: '',
+  },
   profile: {
     age: '',
     filingStatus: 'single',   // single | mfj | hoh
@@ -65,6 +78,7 @@ function reducer(state, action) {
         profile: { ...initialState.profile, ...(action.payload.profile || {}) },
         home: { ...initialState.home, ...(action.payload.home || {}) },
         budgetConfig: { ...initialState.budgetConfig, ...(action.payload.budgetConfig || {}) },
+        retirement: { ...initialState.retirement, ...(action.payload.retirement || {}) },
       }
     case 'ADD_ACCOUNT':
       return { ...state, accounts: [...state.accounts, action.payload] }
@@ -261,6 +275,8 @@ function reducer(state, action) {
     }
     case 'SET_PROFILE':
       return { ...state, profile: { ...state.profile, ...action.payload } }
+    case 'SET_RETIREMENT':
+      return { ...state, retirement: { ...(state.retirement || initialState.retirement), ...action.payload } }
     case 'RESET':
       return initialState
     default:

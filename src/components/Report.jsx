@@ -120,7 +120,7 @@ export default function Report() {
         </div>
       ) : (
         <>
-          <div className="stat-row" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <div className="stat-row cols-4">
             <div className="stat-tile" style={{ cursor: 'default' }}>
               <div className="stat-label">Income</div>
               <div className="stat-value money pos-text">{fmt(r.income)}</div>

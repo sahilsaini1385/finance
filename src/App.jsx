@@ -11,6 +11,7 @@ import Budget from './components/Budget.jsx'
 import TaxDocs from './components/TaxDocs.jsx'
 import Home from './components/Home.jsx'
 import Goals from './components/Goals.jsx'
+import Retirement from './components/Retirement.jsx'
 import Report from './components/Report.jsx'
 import Icon, { BrandMark } from './components/Icon.jsx'
 import { useStore } from './store.jsx'
@@ -30,6 +31,7 @@ const NAV = [
   ]},
   { group: 'Plan', items: [
     { id: 'goals', label: 'Goals', icon: 'target' },
+    { id: 'retirement', label: 'Retirement', icon: 'trending-up' },
     { id: 'home', label: 'Home', icon: 'home' },
     { id: 'taxes', label: 'Taxes', icon: 'file-text' },
     { id: 'benefits', label: 'Benefits', icon: 'gift' },
@@ -122,6 +124,7 @@ export default function App() {
           {tab === 'home' && <Home />}
           {tab === 'taxes' && <TaxDocs />}
           {tab === 'goals' && <Goals />}
+          {tab === 'retirement' && <Retirement />}
           {tab === 'report' && <Report />}
           {tab === 'benefits' && <Benefits />}
           {tab === 'insurance' && <Insurance />}
