@@ -3,6 +3,7 @@ import { useStore, uid } from '../store.jsx'
 import { parseStatement } from '../lib/csv.js'
 import { categorize } from '../lib/categorize.js'
 import ConnectSimpleFIN from './ConnectSimpleFIN.jsx'
+import AmazonEnrich from './AmazonEnrich.jsx'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -124,6 +125,8 @@ export default function ImportCSV({ onDone }) {
           {error && <p className="error">{error}</p>}
         </div>
       </div>
+
+      <AmazonEnrich />
 
       {preview && (
         <div className="card form-in">
