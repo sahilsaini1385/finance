@@ -2,6 +2,7 @@
 // Limits below are the announced 2026 IRS figures; update annually and verify at irs.gov.
 
 import { localToday, localMonth } from './dates.js'
+import { txParts } from './tx.js'
 
 export const LIMITS_2026 = {
   year: 2026,
@@ -262,8 +263,11 @@ export function getRecommendations(state) {
   if (Object.keys(budgets).length > 0) {
     const spent = {}
     for (const t of state.transactions) {
-      if (!t.date?.startsWith(thisMonth) || t.amount >= 0) continue
-      spent[t.category] = (spent[t.category] || 0) + -t.amount
+      if (!t.date?.startsWith(thisMonth)) continue
+      for (const p of txParts(t)) {
+        if (p.amount >= 0) continue
+        spent[p.category] = (spent[p.category] || 0) + -p.amount
+      }
     }
     const over = Object.entries(budgets)
       .map(([cat, b]) => [cat, (spent[cat] || 0) - b])
