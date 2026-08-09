@@ -50,7 +50,7 @@
   /* Radius */
   --r-sm: 6px;
   --r-md: 8px;
-  --r-lg: 12px;
+  --r-lg: 14px;
   --r-full: 999px;
 
   /* Type */
@@ -62,6 +62,7 @@
   --dur-3: 320ms;
   --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -136,6 +137,7 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
   }
 }
 
@@ -206,6 +208,8 @@ code {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Faint vertical falloff separates the rail from the canvas without a hard fill */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 65%, transparent), transparent 260px);
 }
 .brand-row {
   display: flex;
@@ -295,6 +299,15 @@ code {
     transform: translateY(4px);
   }
 }
+/* Cards cascade in behind the page — a beat apart, settled by ~200ms. */
+.content > .page > * {
+  animation: page-in var(--dur-3) var(--ease-out) backwards;
+}
+.content > .page > *:nth-child(2) { animation-delay: 30ms; }
+.content > .page > *:nth-child(3) { animation-delay: 60ms; }
+.content > .page > *:nth-child(4) { animation-delay: 90ms; }
+.content > .page > *:nth-child(5) { animation-delay: 120ms; }
+.content > .page > *:nth-child(n + 6) { animation-delay: 150ms; }
 
 @media (max-width: 1023px) {
   .app {
@@ -311,13 +324,14 @@ code {
     height: 52px;
     align-items: center;
     gap: 12px;
-    padding: 0 16px;
-    background: color-mix(in srgb, var(--page) 85%, transparent);
-    backdrop-filter: blur(8px);
+    padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+    background: color-mix(in srgb, var(--page) 80%, transparent);
+    backdrop-filter: blur(12px) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
     border-bottom: 1px solid var(--border);
   }
   .content {
-    padding: 16px 16px 48px;
+    padding: 16px 16px calc(48px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -446,7 +460,9 @@ code {
 /* ---------- stat tiles / hero ---------- */
 .hero-card {
   padding: 24px;
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--border));
   background:
+    radial-gradient(640px 220px at 10% -60px, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
     linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%, var(--surface) 55%);
 }
 .hero-value {
@@ -507,7 +523,11 @@ code {
   transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease),
     box-shadow var(--dur-2) var(--ease);
 }
-.stat-tile:hover {
+/* Only tiles that actually navigate lift on hover — static readouts stay put */
+.stat-tile[role='button'] {
+  cursor: pointer;
+}
+.stat-tile[role='button']:hover {
   border-color: var(--muted);
   transform: translateY(-1px);
   box-shadow: var(--shadow-2), var(--card-inset);
@@ -628,14 +648,17 @@ textarea:focus-visible {
   transform: translateY(1px) scale(0.99);
 }
 .btn.primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 10%, var(--accent)), var(--accent));
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .btn.primary:hover {
-  background: var(--accent-hover);
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 7%, var(--accent-hover)), var(--accent-hover));
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .btn.primary:disabled {
   opacity: 0.5;
@@ -1138,9 +1161,13 @@ textarea:focus-visible {
   color: var(--text-2);
 }
 .empty svg {
-  width: 36px;
-  height: 36px;
-  color: var(--muted);
+  width: 48px;
+  height: 48px;
+  padding: 11px;
+  color: var(--text-3);
+  background: radial-gradient(circle at 30% 25%, var(--surface-2), var(--surface-3));
+  border-radius: var(--r-full);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .skeleton {
   height: 14px;
@@ -1196,7 +1223,7 @@ textarea:focus-visible {
   /* Centered via auto margins, not left:50% — a positioned box's shrink-to-fit
      width is otherwise capped at half the viewport, squishing toasts on mobile. */
   position: fixed;
-  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   left: 0;
   right: 0;
   margin-inline: auto;
@@ -1211,13 +1238,15 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   padding: 10px 14px;
   font-size: 13px;
   box-shadow: var(--shadow-pop);
-  animation: toast-in var(--dur-3) var(--ease-out);
+  animation: toast-in var(--dur-3) var(--ease-spring);
 }
 .toast.good svg {
   color: var(--good-text);
@@ -1277,7 +1306,12 @@ textarea:focus-visible {
   width: 32px;
   height: 32px;
   border-radius: var(--r-md);
-  background: var(--tint-accent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 14%, var(--surface)),
+    color-mix(in srgb, var(--accent) 5%, var(--surface))
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
   display: inline-flex;
   align-items: center;
@@ -1346,6 +1380,26 @@ textarea:focus-visible {
 .area-chart {
   position: relative;
   margin-top: 16px;
+}
+/* Line draws itself in on mount; the fill fades up behind it. pathLength=1
+   on the SVG path makes the dash math unit-length. */
+.area-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-line 900ms var(--ease-out) 80ms forwards;
+}
+.area-fill {
+  animation: fade-in 700ms var(--ease) 300ms backwards;
+}
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 .chart-tip {
   position: absolute;
