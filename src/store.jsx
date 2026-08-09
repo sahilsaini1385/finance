@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react'
 import { computeTotals } from './lib/advisor.js'
 import { buildMonthlyReport, reportHasData } from './lib/report.js'
-import { scanForTransfers } from './lib/transfers.js'
+import { scanForTransfers, SCAN_VERSION } from './lib/transfers.js'
 
 const STORAGE_KEY = 'finance-app-v1'
 
@@ -102,7 +102,7 @@ function reducer(state, action) {
         transactions: state.transactions.map(t => {
           const isTransfer = toTransfer.has(t.id)
           if (!isTransfer && !checked.has(t.id)) return t
-          return { ...t, pairChecked: true, ...(isTransfer ? { category: 'Transfers' } : {}) }
+          return { ...t, pairChecked: SCAN_VERSION, ...(isTransfer ? { category: 'Transfers' } : {}) }
         }),
       }
     }
@@ -273,7 +273,7 @@ export function StoreProvider({ children }) {
     if (state.transactions.length === 0) return
     // Wait until transfer detection has swept everything — archives should
     // never freeze a month that still contains unscanned card payments.
-    if (state.transactions.some(t => !t.pairChecked)) return
+    if (state.transactions.some(t => t.pairChecked !== SCAN_VERSION)) return
     const thisMonth = new Date().toISOString().slice(0, 7)
     const have = new Set((state.reports || []).map(r => r.month))
     const closedMonths = [...new Set(state.transactions.map(t => t.date?.slice(0, 7)).filter(Boolean))]
