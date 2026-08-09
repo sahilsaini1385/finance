@@ -94,6 +94,13 @@ function reducer(state, action) {
       return { ...state, insurance: state.insurance.map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
     case 'DELETE_INSURANCE':
       return { ...state, insurance: state.insurance.filter(p => p.id !== action.payload) }
+    case 'ANNOTATE_TRANSACTIONS': {
+      const byId = new Map(action.payload.map(a => [a.id, a.details]))
+      return {
+        ...state,
+        transactions: state.transactions.map(t => (byId.has(t.id) ? { ...t, details: byId.get(t.id) } : t)),
+      }
+    }
     case 'APPLY_TRANSFER_SCAN': {
       const toTransfer = new Set(action.payload.transferIds)
       const checked = new Set(action.payload.checkedIds)

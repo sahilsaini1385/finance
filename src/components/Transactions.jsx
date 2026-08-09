@@ -93,6 +93,7 @@ export default function Transactions() {
                   <td className="desc">
                     {t.description}
                     {t.pending && <span className="badge" style={{ marginLeft: 6 }}>pending</span>}
+                    {t.details && <div className="muted small">{t.details}</div>}
                   </td>
                   <td className="small">{accountName(t.accountId)}</td>
                   <td>
