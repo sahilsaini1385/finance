@@ -3,6 +3,7 @@
 
 import { normalizeMerchant, detectRecurring } from './savings.js'
 import { effectiveBudgets, EXCLUDED } from './budget.js'
+import { txParts } from './tx.js'
 
 export function shiftMonth(month, delta) {
   const d = new Date(month + '-02')
@@ -18,16 +19,20 @@ export function monthStats(transactions, month) {
   const expenses = []
   for (const t of transactions) {
     if (!t.date?.startsWith(month)) continue
-    if (t.category === 'Income' && t.amount > 0) {
-      income += t.amount
-      continue
+    let isExpense = false
+    for (const p of txParts(t)) {
+      if (p.category === 'Income' && p.amount > 0) {
+        income += p.amount
+        continue
+      }
+      if (EXCLUDED.includes(p.category)) continue
+      const amt = -p.amount // refunds/reimbursements net out
+      byCat[p.category] = (byCat[p.category] || 0) + amt
+      if (p.amount < 0) isExpense = true
     }
-    if (EXCLUDED.includes(t.category)) continue
-    const amt = -t.amount // refunds/reimbursements net out
-    byCat[t.category] = (byCat[t.category] || 0) + amt
-    if (t.amount < 0) {
+    if (isExpense) {
       const m = normalizeMerchant(t.description)
-      if (m) byMerchant[m] = (byMerchant[m] || 0) + amt
+      if (m) byMerchant[m] = (byMerchant[m] || 0) + -t.amount
       expenses.push(t)
     }
   }

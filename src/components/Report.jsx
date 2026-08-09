@@ -6,6 +6,7 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import YearReport from './YearReport.jsx'
 import TaxSummary from './TaxSummary.jsx'
+import Sankey from './Sankey.jsx'
 
 export default function Report() {
   const { state, dispatch } = useStore()
@@ -149,6 +150,14 @@ export default function Report() {
               <div className="stat-sub">{r.nwDelta === null || r.nwDelta === undefined ? 'needs snapshots in this month' : 'change this month'}</div>
             </div>
           </div>
+
+          {r.income > 0 && r.spend > 0 && (
+            <div className="card">
+              <h2>Cash flow</h2>
+              <p className="muted small">Every income dollar, traced to where it went. Ribbon width = dollars; hover for exact amounts.</p>
+              <Sankey income={r.income} byCat={r.byCat} />
+            </div>
+          )}
 
           <div className="grid-2">
             <div className="card">

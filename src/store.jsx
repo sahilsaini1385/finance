@@ -22,7 +22,8 @@ export const initialState = {
   homeBills: [],     // {id, month: 'YYYY-MM', type, amount, hasFile, note}
   budgets: {},       // budget TEMPLATE: {category: monthlyAmount} — the default month
   budgetMonths: {},  // per-month overrides: {'YYYY-MM': {category: amount}}
-  budgetConfig: { incomeTarget: '' },
+  budgetConfig: { incomeTarget: '', rollover: false },
+  billPrefs: [],     // recurring-charge decisions: {merchant, status: 'confirmed'|'ignored'}
   sinkingFunds: [],  // {id, name, monthlyAmount, note}
   customCategories: [], // {id, name} — user-defined spending categories
   home: {
@@ -192,6 +193,11 @@ function reducer(state, action) {
     }
     case 'SET_BUDGET_CONFIG':
       return { ...state, budgetConfig: { ...(state.budgetConfig || {}), ...action.payload } }
+    case 'SET_BILL_PREF': {
+      const { merchant, status } = action.payload
+      const rest = (state.billPrefs || []).filter(p => p.merchant !== merchant)
+      return { ...state, billPrefs: status ? [...rest, { merchant, status }] : rest }
+    }
     case 'ADD_SINKING':
       return { ...state, sinkingFunds: [...(state.sinkingFunds || []), action.payload] }
     case 'DELETE_SINKING':

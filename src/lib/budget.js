@@ -11,6 +11,7 @@
 
 import { CATEGORIES } from './categorize.js'
 import { localMonth } from './dates.js'
+import { txParts } from './tx.js'
 
 export const EXCLUDED = ['Income', 'Transfers', 'Investments']
 export const FIXED_CATS = ['Housing', 'Utilities', 'Insurance', 'Subscriptions', 'Fees']
@@ -56,21 +57,61 @@ export function monthActivity(state, month) {
   let income = 0
   const spentByCat = {}
   const needsReview = []
+  const reviewIds = new Set()
   for (const t of state.transactions) {
     if (!t.date?.startsWith(month)) continue
-    if (t.category === 'Income' && t.amount > 0) {
-      income += t.amount
-      continue
+    for (const p of txParts(t)) {
+      if (p.category === 'Income' && p.amount > 0) {
+        income += p.amount
+        continue
+      }
+      if (EXCLUDED.includes(p.category)) continue
+      // Positive amounts in a spending category are refunds/reimbursements
+      // (returns, employer paying back Work expenses) — they net against spend.
+      spentByCat[p.category] = (spentByCat[p.category] || 0) + -p.amount
+      if (p.amount < 0 && p.category === 'Other' && !reviewIds.has(t.id)) {
+        reviewIds.add(t.id)
+        needsReview.push(t)
+      }
     }
-    if (EXCLUDED.includes(t.category)) continue
-    // Positive amounts in a spending category are refunds/reimbursements
-    // (returns, employer paying back Work expenses) — they net against spend.
-    spentByCat[t.category] = (spentByCat[t.category] || 0) + -t.amount
-    if (t.amount < 0 && t.category === 'Other') needsReview.push(t)
   }
   for (const c of Object.keys(spentByCat)) if (spentByCat[c] < 0) spentByCat[c] = 0
   needsReview.sort((a, b) => a.amount - b.amount) // largest expense first
   return { income, spentByCat, needsReview }
+}
+
+function shiftMonthKey(month, delta) {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// Envelope rollover (YNAB-style, opt-in via budgetConfig.rollover): leftover
+// flexible budget carries forward month to month. Positive-only — an overspent
+// envelope starts the next month at its budget, not in a hole. Only months
+// that actually have transactions accumulate (otherwise the template would
+// mint phantom carryover for months before the user's history began).
+export function rolloverByCat(state, month) {
+  if (!state.budgetConfig?.rollover) return {}
+  const dataMonths = new Set()
+  for (const t of state.transactions) {
+    const m = t.date?.slice(0, 7)
+    if (m) dataMonths.add(m)
+  }
+  const carry = {}
+  for (let i = 12; i >= 1; i--) {
+    const m = shiftMonthKey(month, -i)
+    if (!dataMonths.has(m)) continue
+    const eff = effectiveBudgets(state, m)
+    const { spentByCat } = monthActivity(state, m)
+    for (const c of new Set([...Object.keys(eff), ...Object.keys(carry)])) {
+      if (FIXED_CATS.includes(c) || EXCLUDED.includes(c)) continue
+      const next = (carry[c] || 0) + (eff[c] || 0) - (spentByCat[c] || 0)
+      if (next > 0.005) carry[c] = next
+      else delete carry[c]
+    }
+  }
+  return carry
 }
 
 export function daysInfo(month) {
@@ -144,10 +185,15 @@ export function computeSafeToSpend(state, month) {
     if (!FIXED_CATS.includes(c)) flexBudgeted += b
   }
 
+  const carry = rolloverByCat(state, month)
+  const flexCarry = Object.values(carry).reduce((s, v) => s + v, 0)
+
   const safe = income.value - sinking - fixedCommitted - flexSpent
   const { daysLeft, isCurrent } = daysInfo(month)
   return {
     safe,
+    carry,
+    flexCarry,
     perDay: isCurrent && daysLeft > 0 ? safe / daysLeft : null,
     income,
     sinking,
