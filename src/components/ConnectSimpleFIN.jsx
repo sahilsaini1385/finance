@@ -153,6 +153,27 @@ export default function ConnectSimpleFIN() {
               <div className="skeleton" style={{ width: '60%' }} />
             </div>
           )}
+          {(state.ignoredSimplefinIds || []).length > 0 && (
+            <details className="advanced">
+              <summary>Excluded from sync ({state.ignoredSimplefinIds.length})</summary>
+              <p className="muted small" style={{ margin: '6px 0' }}>
+                Accounts you deleted stay excluded so syncing can't resurrect them.
+                Restore one and the next sync brings it (and up to 90 days of history) back.
+              </p>
+              <div className="chip-row">
+                {state.ignoredSimplefinIds.map(p => {
+                  const id = typeof p === 'string' ? p : p.id
+                  const name = typeof p === 'string' ? p : p.name
+                  return (
+                    <button key={id} className="chip" title="Restore on next sync"
+                      onClick={() => dispatch({ type: 'UNIGNORE_SIMPLEFIN', payload: id })}>
+                      {name} <Icon name="x" size={11} />
+                    </button>
+                  )
+                })}
+              </div>
+            </details>
+          )}
           <details className="advanced">
             <summary>Advanced: CORS proxy</summary>
             <div className="row gap" style={{ marginTop: 6 }}>

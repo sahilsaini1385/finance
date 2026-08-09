@@ -29,6 +29,8 @@ export const TRANSFER_RE = new RegExp(
   'i',
 )
 
+import { isSplit } from './tx.js'
+
 const DAY = 86400000
 const WINDOW_DAYS = 7
 
@@ -58,11 +60,14 @@ export function scanForTransfers(transactions) {
   }
 
   for (const t of fresh) {
-    if (paired.has(t.id) || Math.abs(t.amount) < 5) continue
+    // A split transaction is a deliberate user categorization of its pieces —
+    // flipping it to Transfers would leave the parts counting as spending.
+    if (paired.has(t.id) || Math.abs(t.amount) < 5 || isSplit(t)) continue
     const candidates = (byAmount.get(Math.abs(t.amount).toFixed(2)) || []).filter(
       c =>
         c.id !== t.id &&
         !paired.has(c.id) &&
+        !isSplit(c) &&
         c.accountId !== t.accountId &&
         Math.sign(c.amount) === -Math.sign(t.amount) &&
         Math.abs(new Date(c.date) - new Date(t.date)) <= WINDOW_DAYS * DAY,
@@ -86,7 +91,7 @@ export function scanForTransfers(transactions) {
   // user categorization is never overridden. Stale rows (scanned under an
   // older pattern set) get this layer too.
   for (const t of [...fresh, ...stale]) {
-    if (paired.has(t.id) || t.category !== 'Other') continue
+    if (paired.has(t.id) || t.category !== 'Other' || isSplit(t)) continue
     if (TRANSFER_RE.test(t.description)) transferIds.add(t.id)
   }
 

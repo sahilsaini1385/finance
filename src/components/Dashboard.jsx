@@ -63,9 +63,12 @@ export default function Dashboard({ onNavigate }) {
     const m = Object.fromEntries(months.map(k => [k, { income: 0, expense: 0 }]))
     for (const t of state.transactions) {
       const k = monthKey(t.date)
-      if (!(k in m) || t.category === 'Transfers') continue
-      if (t.amount > 0) m[k].income += t.amount
-      else m[k].expense += -t.amount
+      if (!(k in m)) continue
+      for (const p of txParts(t)) {
+        if (p.category === 'Transfers') continue
+        if (p.amount > 0) m[k].income += p.amount
+        else m[k].expense += -p.amount
+      }
     }
     return m
   }, [state.transactions, months])

@@ -65,7 +65,8 @@ export default function Sankey({ income, byCat }) {
     n.labelY = Math.max(want, lastLabelY + 17)
     lastLabelY = n.labelY
   }
-  const H2 = Math.max(H, lastLabelY + 12)
+  const lastLeft = left[left.length - 1]
+  const H2 = Math.max(H, lastLabelY + 12, left.length > 1 ? lastLeft.y + lastLeft.h + 20 : 0)
 
   // Ribbons: fill each right node from the left column top-down, splitting
   // across Income / From savings as one runs out.
@@ -99,12 +100,14 @@ export default function Sankey({ income, byCat }) {
             <title>{r.label} — {fmt(r.value)}</title>
           </path>
         ))}
-        {left.map(n => (
+        {left.map((n, i) => (
           <g key={n.label}>
             <rect x={LEFT_X} y={n.y} width={NODE_W} height={n.h} rx="3" fill={fill(n.kind)}>
               <title>{n.label} — {fmt(n.value)}</title>
             </rect>
-            <text x={LEFT_X} y={n.y - 8} fontSize="12.5" fill="var(--text)" fontWeight="600">
+            {/* First label sits above its node; any second source (From
+                savings) labels below its node so the two never collide. */}
+            <text x={LEFT_X} y={i === 0 ? n.y - 8 : n.y + n.h + 14} fontSize="12.5" fill="var(--text)" fontWeight="600">
               {n.label} <tspan fill="var(--text-2)" fontWeight="400">{fmt(n.value)}</tspan>
             </text>
           </g>

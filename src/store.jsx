@@ -96,11 +96,24 @@ function reducer(state, action) {
             : g,
         ),
         // Tombstone synced accounts so the next sync doesn't resurrect them.
+        // Stored with the name so the exclusion list is readable and restorable.
         ignoredSimplefinIds: acct?.simplefinId
-          ? [...new Set([...(state.ignoredSimplefinIds || []), acct.simplefinId])]
+          ? [
+              ...(state.ignoredSimplefinIds || []).filter(
+                p => (typeof p === 'string' ? p : p.id) !== acct.simplefinId,
+              ),
+              { id: acct.simplefinId, name: `${acct.institution} · ${acct.name}` },
+            ]
           : state.ignoredSimplefinIds || [],
       }
     }
+    case 'UNIGNORE_SIMPLEFIN':
+      return {
+        ...state,
+        ignoredSimplefinIds: (state.ignoredSimplefinIds || []).filter(
+          p => (typeof p === 'string' ? p : p.id) !== action.payload,
+        ),
+      }
     case 'ADD_TRANSACTIONS': {
       const existing = new Set(state.transactions.map(t => t.hash))
       const fresh = action.payload.filter(t => !existing.has(t.hash))

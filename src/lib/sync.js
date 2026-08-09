@@ -16,7 +16,8 @@ export function buildSyncPatch(payload, state) {
   const today = localToday()
   const bySimplefinId = new Map(state.accounts.filter(a => a.simplefinId).map(a => [a.simplefinId, a]))
   const existingHashes = new Set(state.transactions.map(t => t.hash))
-  const ignored = new Set(state.ignoredSimplefinIds || [])
+  // Tombstones are strings (legacy) or {id, name} objects.
+  const ignored = new Set((state.ignoredSimplefinIds || []).map(p => (typeof p === 'string' ? p : p.id)))
 
   const newAccounts = []
   const updatedAccounts = []

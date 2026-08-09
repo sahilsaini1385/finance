@@ -57,7 +57,6 @@ export function monthActivity(state, month) {
   let income = 0
   const spentByCat = {}
   const needsReview = []
-  const reviewIds = new Set()
   for (const t of state.transactions) {
     if (!t.date?.startsWith(month)) continue
     for (const p of txParts(t)) {
@@ -69,10 +68,10 @@ export function monthActivity(state, month) {
       // Positive amounts in a spending category are refunds/reimbursements
       // (returns, employer paying back Work expenses) — they net against spend.
       spentByCat[p.category] = (spentByCat[p.category] || 0) + -p.amount
-      if (p.amount < 0 && p.category === 'Other' && !reviewIds.has(t.id)) {
-        reviewIds.add(t.id)
-        needsReview.push(t)
-      }
+      // Only unsplit rows land in the review queue — an "Other" piece inside
+      // a split is a deliberate choice, and the queue's quick-categorize
+      // would clobber the parent of a split anyway.
+      if (p === t && p.amount < 0 && p.category === 'Other') needsReview.push(t)
     }
   }
   for (const c of Object.keys(spentByCat)) if (spentByCat[c] < 0) spentByCat[c] = 0
@@ -137,11 +136,13 @@ export function incomeBasis(state, month) {
   const months = new Set()
   const totals = {}
   for (const t of state.transactions) {
-    if (t.category !== 'Income' || t.amount <= 0) continue
     const m = t.date?.slice(0, 7)
     if (!m || m >= month) continue
-    totals[m] = (totals[m] || 0) + t.amount
-    months.add(m)
+    for (const p of txParts(t)) {
+      if (p.category !== 'Income' || p.amount <= 0) continue
+      totals[m] = (totals[m] || 0) + p.amount
+      months.add(m)
+    }
   }
   const recent = [...months].sort().slice(-3)
   if (recent.length > 0) {
