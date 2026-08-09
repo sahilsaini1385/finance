@@ -537,6 +537,18 @@ code {
 .form-grid .span-2 {
   grid-column: 1 / -1;
 }
+/* Number inputs are money fields here — spinner arrows are useless for
+   dollar amounts (5000 → 4000 would take a thousand clicks). Type + Enter. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 input,
 select,
 textarea {
