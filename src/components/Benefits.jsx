@@ -72,7 +72,15 @@ export default function Benefits() {
             Estimated annual value on record: <strong>{fmt(totalValue)}</strong>
           </p>
         </div>
-        <button className="btn primary" onClick={() => { setShowForm(s => !s); setEditingId(null); setForm(blank) }}>
+        <button
+          className="btn primary"
+          onClick={() => {
+            if (editingId) setShowForm(true) // switch edit → blank create, don't discard-and-close
+            else setShowForm(s => !s)
+            setEditingId(null)
+            setForm(blank)
+          }}
+        >
           <Icon name="plus" size={14} /> Add benefit
         </button>
       </div>

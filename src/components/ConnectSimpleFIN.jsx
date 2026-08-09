@@ -18,6 +18,9 @@ export default function ConnectSimpleFIN() {
   const [armed, setArmed] = useState(false)
 
   const setConn = value => dispatch({ type: 'SET_CONNECTION', payload: { kind: 'simplefin', value } })
+  // Merge, don't replace — async handlers hold a stale `conn` snapshot and
+  // must not clobber fields (like proxyUrl) edited while they were in flight.
+  const patchConn = patch => dispatch({ type: 'MERGE_CONNECTION', payload: { kind: 'simplefin', patch } })
 
   const connect = async () => {
     setBusy(true)
@@ -48,7 +51,7 @@ export default function ConnectSimpleFIN() {
       })
       const { patch, summary: s } = buildSyncPatch(payload, state)
       dispatch({ type: 'APPLY_SYNC', payload: patch })
-      setConn({ ...conn, lastSync: new Date().toISOString() })
+      patchConn({ lastSync: new Date().toISOString() })
       setSummary(s)
       toast(`Sync complete — ${s.txAdded} transactions added`, { kind: 'good' })
     } catch (e) {
@@ -70,7 +73,7 @@ export default function ConnectSimpleFIN() {
   }
 
   const saveProxy = () => {
-    setConn({ ...conn, proxyUrl: proxyUrl.trim() })
+    patchConn({ proxyUrl: proxyUrl.trim() })
     toast('Proxy saved')
   }
 
@@ -154,7 +157,7 @@ export default function ConnectSimpleFIN() {
             <summary>Advanced: CORS proxy</summary>
             <div className="row gap" style={{ marginTop: 6 }}>
               <input value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} placeholder="https://your-proxy.workers.dev" style={{ flex: 1, marginTop: 0 }} />
-              <button className="btn" onClick={saveProxy}>Save</button>
+              <button className="btn" onClick={saveProxy} disabled={busy}>Save</button>
             </div>
           </details>
         </>

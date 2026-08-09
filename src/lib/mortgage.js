@@ -1,5 +1,7 @@
 // Mortgage amortization + payoff math. Pure functions.
 
+import { localMonth } from './dates.js'
+
 const num = v => {
   const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
   return Number.isNaN(n) ? 0 : n
@@ -29,12 +31,15 @@ export function amortize(balance, annualRatePct, monthlyPayment, extra = 0) {
     // Keep the series small: record every 3rd month plus the last.
     if (months % 3 === 0 || bal === 0) series.push({ month: months, balance: bal })
   }
+  if (bal > 0) {
+    return { feasible: false, reason: 'payoff is more than 50 years away at this payment' }
+  }
   const payoffDate = new Date()
   payoffDate.setMonth(payoffDate.getMonth() + months)
   return {
-    feasible: bal === 0,
+    feasible: true,
     months,
-    payoffDate: payoffDate.toISOString().slice(0, 7),
+    payoffDate: localMonth(payoffDate),
     totalInterest,
     series,
   }

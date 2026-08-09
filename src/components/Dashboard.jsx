@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { computeTotals, getRecommendations } from '../lib/advisor.js'
+import { localMonth } from '../lib/dates.js'
 import { detectRecurring, upcomingBills } from '../lib/savings.js'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
@@ -14,7 +15,7 @@ function lastNMonths(n) {
   const d = new Date()
   d.setDate(1)
   for (let i = 0; i < n; i++) {
-    out.unshift(d.toISOString().slice(0, 7))
+    out.unshift(localMonth(d))
     d.setMonth(d.getMonth() - 1)
   }
   return out
@@ -68,7 +69,7 @@ export default function Dashboard({ onNavigate }) {
     return m
   }, [state.transactions, months])
 
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = localMonth()
   const spendByCat = useMemo(() => {
     const m = {}
     for (const t of state.transactions) {
@@ -79,7 +80,7 @@ export default function Dashboard({ onNavigate }) {
     return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8)
   }, [state.transactions, thisMonth])
 
-  const recs = getRecommendations(state)
+  const recs = useMemo(() => getRecommendations(state), [state])
   const alerts = recs.filter(r => r.severity === 'critical' || r.severity === 'warning')
 
   const upcoming = useMemo(() => {
@@ -179,19 +180,19 @@ export default function Dashboard({ onNavigate }) {
 
       <div className="stat-row">
         <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
-          onKeyDown={e => e.key === 'Enter' && onNavigate('accounts')}>
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
           <div className="stat-label">Cash</div>
           <div className="stat-value money">{hasAccounts ? fmt(Math.round(cash)) : '—'}</div>
           <div className="stat-sub">{accountCount(['checking', 'savings'])} accounts</div>
         </div>
         <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
-          onKeyDown={e => e.key === 'Enter' && onNavigate('accounts')}>
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
           <div className="stat-label">Investments</div>
           <div className="stat-value money">{hasAccounts ? fmt(Math.round(invest)) : '—'}</div>
           <div className="stat-sub">{accountCount(['brokerage', 'retirement', 'hsa', '529'])} accounts</div>
         </div>
         <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
-          onKeyDown={e => e.key === 'Enter' && onNavigate('accounts')}>
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
           <div className="stat-label">Debt</div>
           <div className="stat-value money">{hasAccounts ? (totals.debt > 0 ? '−' + fmt(Math.round(debt)) : fmt(0)) : '—'}</div>
           <div className="stat-sub">{accountCount(['credit card', 'loan', 'mortgage'])} accounts</div>

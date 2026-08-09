@@ -1,6 +1,8 @@
 // Rules-based guidance engine. Educational only — not tax, legal, or investment advice.
 // Limits below are the announced 2026 IRS figures; update annually and verify at irs.gov.
 
+import { localToday, localMonth } from './dates.js'
+
 export const LIMITS_2026 = {
   year: 2026,
   k401: 24500,
@@ -226,8 +228,8 @@ export function getRecommendations(state) {
 
   const soon = new Date()
   soon.setDate(soon.getDate() + 45)
-  const today = new Date().toISOString().slice(0, 10)
-  const soonStr = soon.toISOString().slice(0, 10)
+  const today = localToday()
+  const soonStr = localToday(soon)
   for (const pol of state.insurance) {
     if (pol.renewalDate && pol.renewalDate >= today && pol.renewalDate <= soonStr) {
       push('insurance', 'info', `${pol.type[0].toUpperCase() + pol.type.slice(1)} policy renews ${pol.renewalDate}`,
@@ -250,7 +252,7 @@ export function getRecommendations(state) {
   }
 
   // Budget overruns — current month (per-month overrides respected)
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = localMonth()
   const monthOverrides = (state.budgetMonths || {})[thisMonth] || {}
   const budgets = { ...(state.budgets || {}) }
   for (const [c, v] of Object.entries(monthOverrides)) {

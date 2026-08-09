@@ -15,7 +15,7 @@ export default function FileDrop({ onFile, accept, title, subtitle }) {
         onDrop={e => { e.preventDefault(); setOver(false); onFile(e.dataTransfer.files?.[0]) }}
         role="button"
         tabIndex={0}
-        onKeyDown={e => e.key === 'Enter' && inputRef.current?.click()}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click() } }}
       >
         <Icon name="upload" size={24} />
         <strong>{title}</strong>

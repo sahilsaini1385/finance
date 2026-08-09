@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { buildMonthlyReport, shiftMonth } from '../lib/report.js'
+import { localMonth } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import YearReport from './YearReport.jsx'
@@ -9,7 +10,7 @@ import TaxSummary from './TaxSummary.jsx'
 export default function Report() {
   const { state, dispatch } = useStore()
   const toast = useToast()
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = localMonth()
   const thisYear = new Date().getFullYear()
   const [mode, setMode] = useState('month')
   const [month, setMonth] = useState(thisMonth)

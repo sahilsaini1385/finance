@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react'
 import { computeTotals } from './lib/advisor.js'
+import { localToday, localMonth } from './lib/dates.js'
 import { buildMonthlyReport, reportHasData } from './lib/report.js'
 import { scanForTransfers, SCAN_VERSION } from './lib/transfers.js'
 
@@ -12,6 +13,7 @@ export const initialState = {
   connections: {
     simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
   },
+  ignoredSimplefinIds: [], // synced accounts the user deleted — never resurrect on sync
   documents: [],     // {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?, notes}
   history: [],       // net-worth snapshots: {date, netWorth, cash, investments, debt} — one per day
   reports: [],       // auto-archived month-end reports (see lib/report.js)
@@ -67,12 +69,23 @@ function reducer(state, action) {
       return { ...state, accounts: [...state.accounts, action.payload] }
     case 'UPDATE_ACCOUNT':
       return { ...state, accounts: state.accounts.map(a => (a.id === action.payload.id ? { ...a, ...action.payload } : a)) }
-    case 'DELETE_ACCOUNT':
+    case 'DELETE_ACCOUNT': {
+      const acct = state.accounts.find(a => a.id === action.payload)
       return {
         ...state,
         accounts: state.accounts.filter(a => a.id !== action.payload),
         transactions: state.transactions.filter(t => t.accountId !== action.payload),
+        goals: state.goals.map(g =>
+          g.accountIds?.includes(action.payload)
+            ? { ...g, accountIds: g.accountIds.filter(id => id !== action.payload) }
+            : g,
+        ),
+        // Tombstone synced accounts so the next sync doesn't resurrect them.
+        ignoredSimplefinIds: acct?.simplefinId
+          ? [...new Set([...(state.ignoredSimplefinIds || []), acct.simplefinId])]
+          : state.ignoredSimplefinIds || [],
       }
+    }
     case 'ADD_TRANSACTIONS': {
       const existing = new Set(state.transactions.map(t => t.hash))
       const fresh = action.payload.filter(t => !existing.has(t.hash))
@@ -212,6 +225,14 @@ function reducer(state, action) {
       return { ...state, home: { ...state.home, ...action.payload } }
     case 'SET_CONNECTION':
       return { ...state, connections: { ...state.connections, [action.payload.kind]: action.payload.value } }
+    case 'MERGE_CONNECTION': {
+      // Shallow-merge into an existing connection — for async flows that must
+      // not clobber fields (e.g. proxyUrl) edited while a sync was in flight.
+      const { kind, patch } = action.payload
+      const cur = state.connections?.[kind]
+      if (!cur) return state
+      return { ...state, connections: { ...state.connections, [kind]: { ...cur, ...patch } } }
+    }
     case 'APPLY_SYNC': {
       const { newAccounts, updatedAccounts, transactions } = action.payload
       const updates = Object.fromEntries(updatedAccounts.map(u => [u.id, u]))
@@ -265,6 +286,21 @@ export function StoreProvider({ children }) {
     }
   }, [state])
 
+  // Cross-tab sync: when another tab persists, rehydrate instead of letting
+  // this tab's stale in-memory state overwrite it on its next dispatch.
+  useEffect(() => {
+    const onStorage = e => {
+      if (e.key !== STORAGE_KEY || !e.newValue) return
+      try {
+        dispatch({ type: 'HYDRATE', payload: JSON.parse(e.newValue) })
+      } catch (err) {
+        console.error('Failed to sync data from another tab', err)
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   // Transfer detection: pair equal-and-opposite amounts across accounts (card
   // payments, savings moves) and stamp everything examined as pairChecked.
   useEffect(() => {
@@ -281,7 +317,7 @@ export function StoreProvider({ children }) {
     // Wait until transfer detection has swept everything — archives should
     // never freeze a month that still contains unscanned card payments.
     if (state.transactions.some(t => t.pairChecked !== SCAN_VERSION)) return
-    const thisMonth = new Date().toISOString().slice(0, 7)
+    const thisMonth = localMonth()
     const have = new Set((state.reports || []).map(r => r.month))
     const closedMonths = [...new Set(state.transactions.map(t => t.date?.slice(0, 7)).filter(Boolean))]
       .filter(m => m < thisMonth && !have.has(m))
@@ -297,7 +333,7 @@ export function StoreProvider({ children }) {
   useEffect(() => {
     if (state.accounts.length === 0) return
     const t = computeTotals(state)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     const existing = state.history?.find(h => h.date === today)
     if (existing && Math.abs(existing.netWorth - t.netWorth) < 0.005) return
     dispatch({
