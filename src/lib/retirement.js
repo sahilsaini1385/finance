@@ -59,9 +59,12 @@ export function retirementParams(state, investmentsTotal) {
   if (!monthlyExpenses) missing.push('monthly living expenses')
   if (missing.length > 0) return { ready: false, missing }
 
-  const retireAge = Math.max(age + 1, num(r.retireAge) || RETIREMENT_DEFAULTS.retireAge)
-  const lifeExpectancy = Math.max(retireAge + 1, num(r.lifeExpectancy) || RETIREMENT_DEFAULTS.lifeExpectancy)
-  const ssClaimAge = num(r.ssClaimAge) || RETIREMENT_DEFAULTS.ssClaimAge
+  // Whole years only — the projection steps annually and the chart marker /
+  // claim-age comparisons match on exact ages.
+  const ageInt = Math.round(age)
+  const retireAge = Math.round(Math.max(ageInt + 1, num(r.retireAge) || RETIREMENT_DEFAULTS.retireAge))
+  const lifeExpectancy = Math.round(Math.max(retireAge + 1, num(r.lifeExpectancy) || RETIREMENT_DEFAULTS.lifeExpectancy))
+  const ssClaimAge = Math.round(num(r.ssClaimAge) || RETIREMENT_DEFAULTS.ssClaimAge)
 
   // Contributions while working (same math as the FI projection)
   const k401 = income * (num(p.k401ContributionPct) / 100)
@@ -78,7 +81,7 @@ export function retirementParams(state, investmentsTotal) {
 
   return {
     ready: true,
-    age,
+    age: ageInt,
     retireAge,
     lifeExpectancy,
     savings: Math.max(0, investmentsTotal),

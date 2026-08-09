@@ -120,12 +120,25 @@ export default function Budget() {
   const reviewTx = useAutoCategorize()
 
   // Move money between envelopes for this month (YNAB's "cover overspending").
+  // Capped at what the source envelope actually holds — moving can never
+  // create budget out of thin air.
   const applyMove = () => {
-    const amt = parseFloat(move.amt)
-    if (!amt || amt <= 0 || !move.from || !move.to || move.from === move.to) return
-    setBudget(move.from, Math.max(0, (budgets[move.from] || 0) - amt))
+    const wanted = parseFloat(move.amt)
+    if (!wanted || wanted <= 0 || !move.from || !move.to || move.from === move.to) return
+    const available = budgets[move.from] || 0
+    const amt = Math.min(wanted, available)
+    if (amt <= 0) {
+      toast(`${move.from} has no budget to move this month`, { kind: 'error' })
+      return
+    }
+    setBudget(move.from, available - amt)
     setBudget(move.to, (budgets[move.to] || 0) + amt)
-    toast(`Moved ${fmt(amt)} from ${move.from} to ${move.to} for ${monthLabel}`, { kind: 'good' })
+    toast(
+      amt < wanted
+        ? `${move.from} only had ${fmt(available)} — moved all of it to ${move.to}`
+        : `Moved ${fmt(amt)} from ${move.from} to ${move.to} for ${monthLabel}`,
+      { kind: 'good' },
+    )
     setMove({ from: '', to: '', amt: '' })
     setMoveOpen(false)
   }
@@ -140,10 +153,12 @@ export default function Budget() {
   const nextDue = r => {
     const step = CADENCE_STEP[r.cadence]
     const todayD = new Date(localToday() + 'T00:00:00Z')
-    let next = new Date(r.lastDate + 'T00:00:00Z')
-    let guard = 0
-    while (next < todayD && guard++ < 60) next = new Date(next.getTime() + step * 86400000)
-    return next.toISOString().slice(0, 10)
+    const last = new Date(r.lastDate + 'T00:00:00Z')
+    // Jump straight to the first due date >= today (loops cap out on old
+    // CSV history — a weekly bill last seen 2 years ago needs 100+ steps).
+    const gapDays = Math.max(0, (todayD - last) / 86400000)
+    const steps = Math.ceil(gapDays / step)
+    return new Date(last.getTime() + steps * step * 86400000).toISOString().slice(0, 10)
   }
   const paidThisMonth = r =>
     state.transactions.some(t => t.amount < 0 && t.date?.startsWith(thisMonth) && normalizeMerchant(t.description) === r.merchant)

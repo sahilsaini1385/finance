@@ -75,9 +75,9 @@ function TxEditor({ t, cats, onDone }) {
             <input type="number" inputMode="decimal" step="0.01" aria-label={`Split ${i + 1} amount`}
               value={r.amt} onChange={e => setRow(i, { amt: e.target.value })} />
           </span>
-          {Math.abs(remainder) >= 0.005 && (
-            <button className="chip" onClick={() => setRow(i, { amt: String((Math.round(((parseFloat(r.amt) || 0) + remainder) * 100) / 100)) })}>
-              +{fmtCents(remainder)} here
+          {Math.abs(remainder) >= 0.005 && (parseFloat(r.amt) || 0) + remainder > 0 && (
+            <button className="chip" onClick={() => setRow(i, { amt: String(Math.round(((parseFloat(r.amt) || 0) + remainder) * 100) / 100) })}>
+              {remainder > 0 ? '+' : '−'}{fmtCents(Math.abs(remainder))} here
             </button>
           )}
           {rows.length > 2 && (
