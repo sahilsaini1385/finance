@@ -61,7 +61,17 @@ export default function Goals() {
           <h1>Goals</h1>
           <p className="muted small">Link accounts to a target and watch it fund itself.</p>
         </div>
-        <button className="btn primary" onClick={() => { setShowForm(s => !s); setEditingId(null); setForm(blank) }}>
+        <button
+          className="btn primary"
+          onClick={() => {
+            // While editing, "Add" switches to a blank create form instead of
+            // silently closing the form and discarding the edit.
+            if (editingId) setShowForm(true)
+            else setShowForm(s => !s)
+            setEditingId(null)
+            setForm(blank)
+          }}
+        >
           <Icon name="plus" size={14} /> Add goal
         </button>
       </div>
@@ -124,6 +134,7 @@ export default function Goals() {
           const done = saved >= g.target
           const months = monthsUntil(g.targetDate)
           const monthlyNeeded = months > 0 && !done ? (g.target - saved) / months : null
+          const linkedCount = (g.accountIds || []).filter(id => state.accounts.some(a => a.id === id)).length
           return (
             <div className="card" key={g.id}>
               <div className="page-head" style={{ marginBottom: 8 }}>
@@ -147,9 +158,9 @@ export default function Goals() {
                 <div className="meter-fill" style={{ width: `${pct}%`, background: done ? 'var(--good)' : 'var(--accent)' }} />
               </div>
               <div className="muted small" style={{ marginTop: 8 }}>
-                {(g.accountIds || []).length === 0
+                {linkedCount === 0
                   ? 'No accounts linked — edit the goal to link funding accounts.'
-                  : `Funded by ${(g.accountIds || []).length} account${g.accountIds.length > 1 ? 's' : ''}`}
+                  : `Funded by ${linkedCount} account${linkedCount > 1 ? 's' : ''}`}
                 {g.targetDate && !done && months !== null && (
                   <> · {months} months to {g.targetDate}{monthlyNeeded ? ` — needs ${fmt(monthlyNeeded)}/mo` : ''}</>
                 )}

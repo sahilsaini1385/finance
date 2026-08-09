@@ -24,7 +24,6 @@ export function monthStats(transactions, month) {
     }
     if (EXCLUDED.includes(t.category)) continue
     const amt = -t.amount // refunds/reimbursements net out
-    spend += amt
     byCat[t.category] = (byCat[t.category] || 0) + amt
     if (t.amount < 0) {
       const m = normalizeMerchant(t.description)
@@ -32,8 +31,11 @@ export function monthStats(transactions, month) {
       expenses.push(t)
     }
   }
+  // Same netting rule as budget.js monthActivity: clamp each category at 0,
+  // and make the headline total the sum of the clamped categories so the
+  // Report and Budget pages (and the bars vs the headline) always agree.
   for (const c of Object.keys(byCat)) if (byCat[c] <= 0) delete byCat[c]
-  if (spend < 0) spend = 0
+  spend = Object.values(byCat).reduce((s, v) => s + v, 0)
   expenses.sort((a, b) => a.amount - b.amount)
   return { income, spend, byCat, byMerchant, expenses }
 }

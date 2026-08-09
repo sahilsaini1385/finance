@@ -677,6 +677,15 @@ textarea:focus-visible {
   border-collapse: collapse;
   font-size: 14px;
 }
+/* On small screens wide tables scroll inside the card instead of
+   overflowing the page sideways. */
+@media (max-width: 700px) {
+  .table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
 .table th {
   text-align: left;
   border-bottom: 1px solid var(--grid);
@@ -1144,10 +1153,15 @@ textarea:focus-visible {
 }
 
 .toast-stack {
+  /* Centered via auto margins, not left:50% — a positioned box's shrink-to-fit
+     width is otherwise capped at half the viewport, squishing toasts on mobile. */
   position: fixed;
   bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
+  max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
   gap: 8px;

@@ -1,6 +1,8 @@
 // Savings detection — finds recurring charges and money leaks in transaction
 // history. Pure functions, no I/O; runs entirely in the browser.
 
+import { localToday } from './dates.js'
+
 const num = v => {
   const n = parseFloat(v)
   return Number.isNaN(n) ? 0 : n
@@ -103,10 +105,13 @@ const CADENCE_DAYS = { weekly: 7, biweekly: 14, monthly: 30.44, annual: 365.25 }
 // Project detected recurring charges (and insurance renewals) forward.
 // Returns { bills: [{date, label, amount, kind}], total } within `days` from today.
 export function upcomingBills(recurring, insurance = [], days = 30) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // Anchor "today" to the LOCAL calendar date at UTC midnight so it compares
+  // cleanly with 'YYYY-MM-DD' strings parsed by new Date() (which are UTC).
+  const todayStr = localToday()
+  const today = new Date(todayStr + 'T00:00:00Z')
   const horizon = new Date(today)
-  horizon.setDate(horizon.getDate() + days)
+  horizon.setUTCDate(horizon.getUTCDate() + days)
+  const horizonStr = horizon.toISOString().slice(0, 10)
   const bills = []
 
   for (const r of recurring) {
@@ -124,8 +129,7 @@ export function upcomingBills(recurring, insurance = [], days = 30) {
 
   for (const p of insurance) {
     if (!p.renewalDate) continue
-    const d = new Date(p.renewalDate)
-    if (d >= today && d <= horizon) {
+    if (p.renewalDate >= todayStr && p.renewalDate <= horizonStr) {
       bills.push({
         date: p.renewalDate,
         label: `${p.provider || p.policyName || 'policy'} ${p.type} renewal`.toLowerCase(),

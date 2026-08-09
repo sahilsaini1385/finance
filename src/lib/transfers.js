@@ -75,7 +75,11 @@ export function scanForTransfers(transactions) {
     paired.add(t.id)
     paired.add(match.id)
     if (t.category !== 'Transfers') transferIds.add(t.id)
-    if (match.category !== 'Transfers') transferIds.add(match.id)
+    // Only flip an already-scanned counterpart while it's still uncategorized —
+    // a category the user set on an old transaction is never overridden.
+    if (match.category !== 'Transfers' && (!match.pairChecked || match.category === 'Other')) {
+      transferIds.add(match.id)
+    }
   }
 
   // Keyword fallback — only for still-uncategorized rows, so a deliberate

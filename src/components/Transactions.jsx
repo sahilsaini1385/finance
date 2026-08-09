@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useDeferredValue, useMemo, useState } from 'react'
 import { useStore, fmtCents } from '../store.jsx'
 import { allCategories } from '../lib/budget.js'
 import Icon from './Icon.jsx'
@@ -14,14 +14,19 @@ export default function Transactions() {
 
   const accountName = id => state.accounts.find(a => a.id === id)?.name || 'Unlinked'
 
+  const cats = useMemo(() => allCategories(state), [state.customCategories]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Let the 500-row table lag behind the keystroke instead of blocking it.
+  const deferredSearch = useDeferredValue(search)
+
   const rows = useMemo(() => {
+    const q = deferredSearch.toLowerCase()
     return state.transactions
       .filter(t => filterAccount === 'all' || t.accountId === filterAccount)
       .filter(t => filterCategory === 'all' || t.category === filterCategory)
-      .filter(t => !search || t.description.toLowerCase().includes(search.toLowerCase()))
+      .filter(t => !q || t.description.toLowerCase().includes(q))
       .sort((a, b) => (a.date < b.date ? 1 : -1))
       .slice(0, 500)
-  }, [state.transactions, filterAccount, filterCategory, search])
+  }, [state.transactions, filterAccount, filterCategory, deferredSearch])
 
   const changeCategory = useAutoCategorize()
 
@@ -46,7 +51,7 @@ export default function Transactions() {
         </select>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} aria-label="Filter by category">
           <option value="all">All categories</option>
-          {allCategories(state).map(c => <option key={c}>{c}</option>)}
+          {cats.map(c => <option key={c}>{c}</option>)}
         </select>
         <input placeholder="Search description…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
@@ -102,8 +107,8 @@ export default function Transactions() {
                       aria-label="Category"
                       onChange={e => changeCategory(t, e.target.value)}
                     >
-                      {allCategories(state).map(c => <option key={c}>{c}</option>)}
-                      {!allCategories(state).includes(t.category) && <option>{t.category}</option>}
+                      {cats.map(c => <option key={c}>{c}</option>)}
+                      {!cats.includes(t.category) && <option>{t.category}</option>}
                     </select>
                   </td>
                   <td className={`num ${t.amount < 0 ? '' : 'pos'}`}>{fmtCents(t.amount)}</td>

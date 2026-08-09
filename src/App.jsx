@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Dashboard from './components/Dashboard.jsx'
 import Accounts from './components/Accounts.jsx'
 import Transactions from './components/Transactions.jsx'
@@ -54,9 +54,16 @@ export default function App() {
     window.history.replaceState(null, '', id === 'dashboard' ? '#' : `#${id}`)
   }
   const { state } = useStore()
-  const attention = getRecommendations(state).filter(
-    r => r.severity === 'critical' || r.severity === 'warning',
-  ).length
+  const attention = useMemo(
+    () => getRecommendations(state).filter(r => r.severity === 'critical' || r.severity === 'warning').length,
+    [state],
+  )
+
+  // Keep the active tab visible in the mobile tab strip.
+  const tabsRef = useRef(null)
+  useEffect(() => {
+    tabsRef.current?.querySelector('.tab.active')?.scrollIntoView({ inline: 'center', block: 'nearest' })
+  }, [tab])
 
   return (
     <div className="app">
@@ -91,12 +98,13 @@ export default function App() {
       <div className="main-col">
         <div className="mobile-header">
           <BrandMark size={22} />
-          <nav className="tabs" aria-label="Sections">
+          <nav className="tabs" aria-label="Sections" ref={tabsRef}>
             {FLAT.map(item => (
               <button
                 key={item.id}
                 data-label={item.label}
                 className={tab === item.id ? 'tab active' : 'tab'}
+                aria-current={tab === item.id ? 'page' : undefined}
                 onClick={() => setTab(item.id)}
               >
                 {item.label}

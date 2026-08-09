@@ -6,6 +6,7 @@ import {
   allCategories, EXCLUDED,
 } from '../lib/budget.js'
 import { detectRecurring } from '../lib/savings.js'
+import { localMonth } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import { useAutoCategorize } from './useAutoCategorize.js'
@@ -38,6 +39,14 @@ function suggestions(transactions, thisMonth) {
 }
 
 function BudgetInput({ value, isCustom, onChange, onClearOverride, label }) {
+  // Local draft while editing: the field can be cleared and retyped freely;
+  // the value commits on blur (Enter blurs via the global handler in main.jsx).
+  const [draft, setDraft] = useState(null)
+  const commit = () => {
+    if (draft === null) return
+    if (draft !== String(value ?? '')) onChange(draft)
+    setDraft(null)
+  }
   return (
     <span className="nowrap">
       <span className="input-money" style={{ width: 104, display: 'inline-flex' }}>
@@ -45,8 +54,9 @@ function BudgetInput({ value, isCustom, onChange, onClearOverride, label }) {
           type="number"
           inputMode="decimal"
           placeholder="—"
-          value={value ?? ''}
-          onChange={e => onChange(e.target.value)}
+          value={draft ?? value ?? ''}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
           style={{ textAlign: 'right' }}
           aria-label={label}
         />
@@ -63,7 +73,7 @@ function BudgetInput({ value, isCustom, onChange, onClearOverride, label }) {
 export default function Budget() {
   const { state, dispatch } = useStore()
   const toast = useToast()
-  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = localMonth()
   const [month, setMonth] = useState(thisMonth)
   const [newCat, setNewCat] = useState('')
   const [sinkForm, setSinkForm] = useState({ name: '', monthlyAmount: '' })
@@ -85,7 +95,10 @@ export default function Budget() {
     dispatch({ type: 'SET_MONTH_BUDGET', payload: { month, category, amount: '' } })
 
   const saveAsDefault = () => {
-    for (const [cat, v] of Object.entries(budgets)) dispatch({ type: 'SET_BUDGET', payload: { category: cat, amount: v } })
+    // Union of template + effective categories, so a category zeroed this
+    // month is also removed from the default instead of resurrecting.
+    const cats = new Set([...Object.keys(state.budgets || {}), ...Object.keys(budgets)])
+    for (const cat of cats) dispatch({ type: 'SET_BUDGET', payload: { category: cat, amount: budgets[cat] ?? 0 } })
     dispatch({ type: 'CLEAR_MONTH_BUDGETS', payload: month })
     toast('Saved this month’s numbers as your default budget', { kind: 'good' })
   }

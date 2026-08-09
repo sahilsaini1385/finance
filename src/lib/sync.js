@@ -9,12 +9,14 @@
 
 import { institutionFromOrg, guessAccountType, epochToISODate } from './simplefin.js'
 import { categorize } from './categorize.js'
+import { localToday } from './dates.js'
 import { uid } from '../store.jsx'
 
 export function buildSyncPatch(payload, state) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const bySimplefinId = new Map(state.accounts.filter(a => a.simplefinId).map(a => [a.simplefinId, a]))
   const existingHashes = new Set(state.transactions.map(t => t.hash))
+  const ignored = new Set(state.ignoredSimplefinIds || [])
 
   const newAccounts = []
   const updatedAccounts = []
@@ -23,6 +25,8 @@ export function buildSyncPatch(payload, state) {
   let txSkipped = 0
 
   for (const sf of payload.accounts || []) {
+    // The user deleted this synced account — don't resurrect it or its history.
+    if (ignored.has(sf.id)) continue
     const existing = bySimplefinId.get(sf.id)
     const balance = parseFloat(sf.balance)
     let localId

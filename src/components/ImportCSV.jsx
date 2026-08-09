@@ -12,6 +12,7 @@ function txHash(accountId, t) {
 }
 
 const INSTITUTIONS = ['Chase', 'Bank of America', 'Fidelity', 'Other']
+const TYPES = ['checking', 'savings', 'credit card', 'brokerage', 'retirement', 'hsa', '529', 'loan', 'mortgage', 'other']
 
 export default function ImportCSV({ onDone }) {
   const { state, dispatch } = useStore()
@@ -33,6 +34,9 @@ export default function ImportCSV({ onDone }) {
       setPreview(null)
       return
     }
+    // A detected credit-card format is a better default than 'checking' for
+    // the inline create-account flow.
+    if (/credit card/i.test(result.format || '')) setNewAcct(f => ({ ...f, type: 'credit card' }))
     setPreview({ ...result, fileName: file.name })
   }
 
@@ -55,16 +59,24 @@ export default function ImportCSV({ onDone }) {
     }
     if (!targetId) return
     const existing = new Set(state.transactions.map(t => t.hash))
-    const txs = preview.transactions.map(t => ({
-      id: uid(),
-      accountId: targetId,
-      date: t.date,
-      description: t.description,
-      amount: t.amount,
-      category: categorize(t.description, t.bankCategory, t.amount, state.rules || []),
-      source: preview.format,
-      hash: txHash(targetId, t),
-    }))
+    // Identical same-day rows in one file are distinct purchases, not dupes —
+    // suffix an occurrence counter so overlapping re-imports dedupe row-for-row.
+    const seen = new Map()
+    const txs = preview.transactions.map(t => {
+      const base = txHash(targetId, t)
+      const n = (seen.get(base) || 0) + 1
+      seen.set(base, n)
+      return {
+        id: uid(),
+        accountId: targetId,
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        category: categorize(t.description, t.bankCategory, t.amount, state.rules || []),
+        source: preview.format,
+        hash: n === 1 ? base : `${base}|${n}`,
+      }
+    })
     const fresh = txs.filter(t => !existing.has(t.hash))
     dispatch({ type: 'ADD_TRANSACTIONS', payload: fresh })
     setPreview(null)
@@ -98,7 +110,7 @@ export default function ImportCSV({ onDone }) {
             onDrop={onDrop}
             role="button"
             tabIndex={0}
-            onKeyDown={e => e.key === 'Enter' && fileRef.current?.click()}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click() } }}
           >
             <Icon name="upload" size={24} />
             <strong>Drop a bank CSV or browse</strong>
@@ -168,6 +180,9 @@ export default function ImportCSV({ onDone }) {
                 />
                 <select value={newAcct.institution} onChange={e => setNewAcct(f => ({ ...f, institution: e.target.value }))}>
                   {INSTITUTIONS.map(i => <option key={i}>{i}</option>)}
+                </select>
+                <select value={newAcct.type} aria-label="Account type" onChange={e => setNewAcct(f => ({ ...f, type: e.target.value }))}>
+                  {TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
             )}

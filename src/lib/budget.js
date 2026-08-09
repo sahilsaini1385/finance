@@ -10,6 +10,7 @@
 //   safe to spend — income − sinking − fixed commitment − flexible spent
 
 import { CATEGORIES } from './categorize.js'
+import { localMonth } from './dates.js'
 
 export const EXCLUDED = ['Income', 'Transfers', 'Investments']
 export const FIXED_CATS = ['Housing', 'Utilities', 'Insurance', 'Subscriptions', 'Fees']
@@ -39,10 +40,9 @@ export function effectiveBudgets(state, month) {
   const overrides = (state.budgetMonths || {})[month] || {}
   const out = {}
   for (const [c, v] of Object.entries(template)) if (num(v) > 0) out[c] = num(v)
-  for (const [c, v] of Object.entries(overrides)) {
-    if (num(v) > 0) out[c] = num(v)
-    else delete out[c]
-  }
+  // An explicit 0 override stays visible as 0 (the user zeroed the category
+  // for this month) instead of silently falling back to the template.
+  for (const [c, v] of Object.entries(overrides)) out[c] = Math.max(0, num(v))
   return out
 }
 
@@ -75,7 +75,7 @@ export function monthActivity(state, month) {
 
 export function daysInfo(month) {
   const today = new Date()
-  const thisMonth = today.toISOString().slice(0, 7)
+  const thisMonth = localMonth(today)
   const [y, m] = month.split('-').map(Number)
   const daysInMonth = new Date(y, m, 0).getDate()
   const isCurrent = month === thisMonth

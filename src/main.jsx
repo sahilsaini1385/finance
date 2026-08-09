@@ -22,9 +22,11 @@ document.addEventListener('keydown', e => {
 })
 document.addEventListener(
   'wheel',
-  () => {
+  e => {
     const el = document.activeElement
-    if (el?.tagName === 'INPUT' && el.type === 'number') el.blur()
+    // Only when the wheel happens over the focused input itself — scrolling
+    // elsewhere on the page must never steal focus.
+    if (el?.tagName === 'INPUT' && el.type === 'number' && e.target === el) el.blur()
   },
   { passive: true },
 )

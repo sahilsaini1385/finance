@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { putFile, deleteFile, openFile, getFile, formatBytes } from '../lib/files.js'
 import { amortize, extraPaymentScenarios, formatMonths } from '../lib/mortgage.js'
+import { localMonth } from '../lib/dates.js'
 import FileDrop from './FileDrop.jsx'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
@@ -20,7 +21,7 @@ function lastNMonths(n) {
   const d = new Date()
   d.setDate(1)
   for (let i = 0; i < n; i++) {
-    out.unshift(d.toISOString().slice(0, 7))
+    out.unshift(localMonth(d))
     d.setMonth(d.getMonth() - 1)
   }
   return out
@@ -32,7 +33,7 @@ export default function Home() {
   const home = state.home || {}
   const [docKind, setDocKind] = useState('Mortgage note')
   const [armedId, setArmedId] = useState(null)
-  const [bill, setBill] = useState({ month: new Date().toISOString().slice(0, 7), type: 'Electric', amount: '', note: '' })
+  const [bill, setBill] = useState({ month: localMonth(), type: 'Electric', amount: '', note: '' })
   const [billFile, setBillFile] = useState(null)
   const [extracting, setExtractingId] = useState(null)
   const [extraction, setExtraction] = useState(null) // {docName, fields, picked:Set}
