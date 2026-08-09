@@ -1,9 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { computeTotals } from '../lib/advisor.js'
 import {
   retirementParams, deterministicProjection, monteCarloRetirement, ssExplorer,
-  estimateSSMonthly, RETIREMENT_DEFAULTS,
+  estimateSSMonthly, claimFactor, RETIREMENT_DEFAULTS,
 } from '../lib/retirement.js'
 import Icon from './Icon.jsx'
 
@@ -70,13 +70,16 @@ export default function Retirement() {
 
   const params = useMemo(() => retirementParams(state, totals.investments), [state.retirement, state.profile, state.accounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Defer the heavy work: typing in a lever stays instant, and the ~1,000
+  // simulations re-run right behind the keystroke.
+  const simParams = useDeferredValue(params)
   const results = useMemo(() => {
-    if (!params.ready) return null
-    const det = deterministicProjection(params)
-    const mc = monteCarloRetirement(params)
-    const ss = ssExplorer(params)
-    return { det, mc, ss }
-  }, [params])
+    if (!simParams.ready) return null
+    const det = deterministicProjection(simParams)
+    const mc = monteCarloRetirement(simParams)
+    const ss = ssExplorer(simParams)
+    return { det, mc, ss, params: simParams }
+  }, [simParams])
 
   if (!params.ready) {
     return (
@@ -111,13 +114,24 @@ export default function Retirement() {
     )
   }
 
+  if (!results) {
+    return (
+      <div className="page">
+        <h1>Retirement</h1>
+        <div className="card"><p className="muted small">Running simulations…</p></div>
+      </div>
+    )
+  }
+
   const { det, mc, ss } = results
   const score = Math.round(mc.successRate * 100)
   const scoreColor = score >= 80 ? 'var(--good-text, var(--good))' : score >= 50 ? 'var(--warning-text, var(--warning))' : 'var(--critical)'
   const medianEnd = mc.band[mc.band.length - 1].p50
-  const medianAtRetire = mc.band.find(b => b.age === params.retireAge)?.p50 ?? 0
-  const ssChosen = ss.find(s => s.chosen)
-  const gapMonthly = Math.max(0, params.spendingMonthly - (ssChosen ? ssChosen.monthly : 0) - params.pensionAnnual / 12)
+  const medianAtRetire = mc.band.find(b => b.age === results.params.retireAge)?.p50 ?? 0
+  // Works for any claim age, not just the explorer's 62/67/70 rows
+  const ssMonthlyChosen = Math.round(params.ssMonthlyAt67 * claimFactor(params.ssClaimAge))
+  const checksMonthly = ssMonthlyChosen + params.pensionAnnual / 12
+  const gapMonthly = Math.max(0, params.spendingMonthly - checksMonthly)
 
   const numInput = (label, key, { width = 90, placeholder = '', money = false, title = '' } = {}) => (
     <label className="inline-label" title={title}>{label}
@@ -160,7 +174,7 @@ export default function Retirement() {
         <div className="stat-tile" style={{ cursor: 'default' }}>
           <div className="stat-label">Spending covered by checks</div>
           <div className="stat-value money">
-            {fmt((ssChosen ? ssChosen.monthly : 0) + params.pensionAnnual / 12)}<span className="muted" style={{ fontSize: 14 }}>/mo</span>
+            {fmt(checksMonthly)}<span className="muted" style={{ fontSize: 14 }}>/mo</span>
           </div>
           <div className="stat-sub">
             {gapMonthly > 0
@@ -178,8 +192,8 @@ export default function Retirement() {
       </div>
 
       <div className="card">
-        <h2><span className="icon-chip"><Icon name="trending-up" /></span> Portfolio through age {params.lifeExpectancy}</h2>
-        <BandChart band={mc.band} retireAge={params.retireAge} />
+        <h2><span className="icon-chip"><Icon name="trending-up" /></span> Portfolio through age {results.params.lifeExpectancy}</h2>
+        <BandChart band={mc.band} retireAge={results.params.retireAge} />
       </div>
 
       <div className="card">
