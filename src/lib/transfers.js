@@ -11,11 +11,14 @@
 // Every examined transaction is stamped pairChecked so the scan is one-shot
 // per transaction and never fights a category the user set afterwards.
 
+const ISSUERS =
+  'bank of america|bofa|chase|citi|amex|american express|capital one|discover|barclay|us bank|wells fargo|apple ?card|gs ?bank|goldman|synchrony'
+
 export const TRANSFER_RE = new RegExp(
   [
     'credit c(ar)?d',
-    '(payment|pymt|epay|e-pay)[^a-z]{0,15}(to )?(bank of america|bofa|chase|citi|amex|american express|capital one|discover|barclay|us bank|wells fargo)',
-    '(bank of america|bofa|chase|citi|amex|american express|capital one|discover|barclay|us bank|wells fargo)[^a-z]{0,15}(payment|pymt|epay|e-pay|autopay|directpay)',
+    `(payment|pymt|epay|e-pay)[^a-z]{0,15}(to )?(${ISSUERS})`,
+    `(${ISSUERS})[^a-z]{0,15}(payment|pymt|epay|e-pay|autopay|directpay)`,
     'cardmember serv',
     'payment thank you',
     'payment received',
@@ -29,12 +32,18 @@ export const TRANSFER_RE = new RegExp(
 const DAY = 86400000
 const WINDOW_DAYS = 7
 
+// Bump when TRANSFER_RE gains patterns: previously-scanned transactions get a
+// keyword-only re-sweep (never pair re-matching, so a category the user chose
+// after the first scan is never overridden).
+export const SCAN_VERSION = 2
+
 // Returns { transferIds: string[], checkedIds: string[] }
 // - transferIds: transactions to recategorize as Transfers
 // - checkedIds: every transaction examined this pass (stamp pairChecked)
 export function scanForTransfers(transactions) {
   const fresh = transactions.filter(t => !t.pairChecked)
-  if (fresh.length === 0) return { transferIds: [], checkedIds: [] }
+  const stale = transactions.filter(t => t.pairChecked && t.pairChecked !== SCAN_VERSION)
+  if (fresh.length === 0 && stale.length === 0) return { transferIds: [], checkedIds: [] }
 
   const transferIds = new Set()
   const paired = new Set()
@@ -70,11 +79,12 @@ export function scanForTransfers(transactions) {
   }
 
   // Keyword fallback — only for still-uncategorized rows, so a deliberate
-  // user categorization is never overridden.
-  for (const t of fresh) {
+  // user categorization is never overridden. Stale rows (scanned under an
+  // older pattern set) get this layer too.
+  for (const t of [...fresh, ...stale]) {
     if (paired.has(t.id) || t.category !== 'Other') continue
     if (TRANSFER_RE.test(t.description)) transferIds.add(t.id)
   }
 
-  return { transferIds: [...transferIds], checkedIds: fresh.map(t => t.id) }
+  return { transferIds: [...transferIds], checkedIds: [...fresh, ...stale].map(t => t.id) }
 }
