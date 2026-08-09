@@ -40,6 +40,7 @@ const RULES = [
 ]
 
 import { normalizeMerchant } from './savings.js'
+import { TRANSFER_RE } from './transfers.js'
 
 // User-defined rules (matched on normalized merchant) always win over the
 // built-in keyword heuristics below.
@@ -49,6 +50,9 @@ export function categorize(description, bankCategory, amount, userRules = []) {
     const hit = userRules.find(r => r.match === merchant)
     if (hit) return hit.category
   }
+  // Card-payment phrasing is distinctive enough to outrank merchant keywords —
+  // "CHASE CREDIT CARD PAYMENT" must never land in a spending category.
+  if (TRANSFER_RE.test(description)) return 'Transfers'
   for (const [cat, re] of RULES) {
     if (re.test(description)) return cat
   }
