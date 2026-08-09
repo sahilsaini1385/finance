@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react'
 import { computeTotals } from './lib/advisor.js'
 import { buildMonthlyReport, reportHasData } from './lib/report.js'
+import { scanForTransfers } from './lib/transfers.js'
 
 const STORAGE_KEY = 'finance-app-v1'
 
@@ -93,6 +94,18 @@ function reducer(state, action) {
       return { ...state, insurance: state.insurance.map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
     case 'DELETE_INSURANCE':
       return { ...state, insurance: state.insurance.filter(p => p.id !== action.payload) }
+    case 'APPLY_TRANSFER_SCAN': {
+      const toTransfer = new Set(action.payload.transferIds)
+      const checked = new Set(action.payload.checkedIds)
+      return {
+        ...state,
+        transactions: state.transactions.map(t => {
+          const isTransfer = toTransfer.has(t.id)
+          if (!isTransfer && !checked.has(t.id)) return t
+          return { ...t, pairChecked: true, ...(isTransfer ? { category: 'Transfers' } : {}) }
+        }),
+      }
+    }
     case 'SAVE_REPORT': {
       const rest = (state.reports || []).filter(r => r.month !== action.payload.month)
       return { ...state, reports: [...rest, action.payload].sort((a, b) => (a.month < b.month ? -1 : 1)).slice(-36) }
@@ -245,10 +258,22 @@ export function StoreProvider({ children }) {
     }
   }, [state])
 
+  // Transfer detection: pair equal-and-opposite amounts across accounts (card
+  // payments, savings moves) and stamp everything examined as pairChecked.
+  useEffect(() => {
+    const { transferIds, checkedIds } = scanForTransfers(state.transactions)
+    if (checkedIds.length > 0) {
+      dispatch({ type: 'APPLY_TRANSFER_SCAN', payload: { transferIds, checkedIds } })
+    }
+  }, [state.transactions]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Month-end report archiving: when the app runs after a month has closed,
   // archive that month's report (backfilling up to a year of missed months).
   useEffect(() => {
     if (state.transactions.length === 0) return
+    // Wait until transfer detection has swept everything — archives should
+    // never freeze a month that still contains unscanned card payments.
+    if (state.transactions.some(t => !t.pairChecked)) return
     const thisMonth = new Date().toISOString().slice(0, 7)
     const have = new Set((state.reports || []).map(r => r.month))
     const closedMonths = [...new Set(state.transactions.map(t => t.date?.slice(0, 7)).filter(Boolean))]
