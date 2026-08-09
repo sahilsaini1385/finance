@@ -5,8 +5,8 @@ import {
   monthActivity, daysInfo, paceProjection, computeSafeToSpend, sinkingTotal,
   allCategories, EXCLUDED,
 } from '../lib/budget.js'
-import { detectRecurring } from '../lib/savings.js'
-import { localMonth } from '../lib/dates.js'
+import { detectRecurring, normalizeMerchant } from '../lib/savings.js'
+import { localMonth, localToday } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import { useAutoCategorize } from './useAutoCategorize.js'
@@ -78,6 +78,8 @@ export default function Budget() {
   const [newCat, setNewCat] = useState('')
   const [sinkForm, setSinkForm] = useState({ name: '', monthlyAmount: '' })
   const [armedId, setArmedId] = useState(null)
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [move, setMove] = useState({ from: '', to: '', amt: '' })
 
   const budgets = effectiveBudgets(state, month)
   const { income, spentByCat, needsReview } = useMemo(() => monthActivity(state, month), [state.transactions, month])
@@ -116,6 +118,35 @@ export default function Budget() {
   }
 
   const reviewTx = useAutoCategorize()
+
+  // Move money between envelopes for this month (YNAB's "cover overspending").
+  const applyMove = () => {
+    const amt = parseFloat(move.amt)
+    if (!amt || amt <= 0 || !move.from || !move.to || move.from === move.to) return
+    setBudget(move.from, Math.max(0, (budgets[move.from] || 0) - amt))
+    setBudget(move.to, (budgets[move.to] || 0) + amt)
+    toast(`Moved ${fmt(amt)} from ${move.from} to ${move.to} for ${monthLabel}`, { kind: 'good' })
+    setMove({ from: '', to: '', amt: '' })
+    setMoveOpen(false)
+  }
+
+  // Bills & subscriptions (Monarch-style recurring manager)
+  const billPrefs = state.billPrefs || []
+  const prefFor = m => billPrefs.find(p => p.merchant === m)
+  const activeBills = recurring.filter(r => prefFor(r.merchant)?.status !== 'ignored')
+  const ignoredBills = recurring.filter(r => prefFor(r.merchant)?.status === 'ignored')
+  const setBillPref = (merchant, status) => dispatch({ type: 'SET_BILL_PREF', payload: { merchant, status } })
+  const CADENCE_STEP = { weekly: 7, biweekly: 14, monthly: 30.44, annual: 365.25 }
+  const nextDue = r => {
+    const step = CADENCE_STEP[r.cadence]
+    const todayD = new Date(localToday() + 'T00:00:00Z')
+    let next = new Date(r.lastDate + 'T00:00:00Z')
+    let guard = 0
+    while (next < todayD && guard++ < 60) next = new Date(next.getTime() + step * 86400000)
+    return next.toISOString().slice(0, 10)
+  }
+  const paidThisMonth = r =>
+    state.transactions.some(t => t.amount < 0 && t.date?.startsWith(thisMonth) && normalizeMerchant(t.description) === r.merchant)
 
   const addCategory = e => {
     e.preventDefault()
@@ -161,10 +192,12 @@ export default function Budget() {
   // land as lumps (mortgage on the 1st would "project" to 4× itself).
   const renderRows = (cats, { showPace = true } = {}) => cats.map(cat => {
     const b = budgets[cat] || 0
+    const carry = sts.carry?.[cat] || 0
+    const availBudget = b + carry // what the envelope really holds with rollover
     const s = spentByCat[cat] || 0
-    if (!b && !s && !state.budgets?.[cat] && !sugg.byCat[cat]) return null
+    if (!b && !carry && !s && !state.budgets?.[cat] && !sugg.byCat[cat]) return null
     const proj = showPace && isCurrent && b > 0 && s > 0 ? paceProjection(s, dayOfMonth, daysInMonth) : null
-    const over = b > 0 && s > b
+    const over = availBudget > 0 && s > availBudget
     const custom = state.customCategories?.find(c => c.name === cat)
     return (
       <tr key={cat}>
@@ -198,18 +231,19 @@ export default function Budget() {
           )}
         </td>
         <td style={{ width: '26%' }}>
-          {b > 0 && (
+          {availBudget > 0 && (
             <div className="meter">
-              <div className="meter-fill" style={{ width: `${Math.min(100, (s / b) * 100)}%`, background: paceColor(s, b) }} />
+              <div className="meter-fill" style={{ width: `${Math.min(100, (s / availBudget) * 100)}%`, background: paceColor(s, availBudget) }} />
             </div>
           )}
         </td>
         <td className="num">{s > 0 ? fmt(s) : '—'}</td>
-        <td className="num small" style={proj && proj > b ? { color: 'var(--warning-text)', fontWeight: 600 } : undefined}>
+        <td className="num small" style={proj && proj > availBudget ? { color: 'var(--warning-text)', fontWeight: 600 } : undefined}>
           {proj !== null && Math.abs(proj - s) > 1 ? `→ ${fmt(proj)}` : ''}
         </td>
         <td className="num" style={over ? { color: 'var(--critical)', fontWeight: 600 } : undefined}>
-          {b > 0 ? (over ? `−${fmt(s - b)}` : fmt(b - s)) : ''}
+          {availBudget > 0 ? (over ? `−${fmt(s - availBudget)}` : fmt(availBudget - s)) : ''}
+          {carry > 0 && <div className="small muted money" style={{ fontWeight: 400 }}>incl. {fmt(carry)} carried</div>}
         </td>
       </tr>
     )
@@ -313,6 +347,19 @@ export default function Budget() {
           <span><i className="swatch" style={{ background: 'var(--warning)' }} /> Set-asides</span>
           <span><i className="swatch" style={{ background: 'var(--surface-3)' }} /> Unplanned</span>
         </div>
+        <div className="row gap wrap" style={{ marginTop: 10 }}>
+          <label className="check-pill" title="Leftover flexible budget carries into next month's envelope (YNAB-style). Overspending doesn't dig a hole — envelopes never carry negative.">
+            <input
+              type="checkbox"
+              checked={Boolean(state.budgetConfig?.rollover)}
+              onChange={e => dispatch({ type: 'SET_BUDGET_CONFIG', payload: { rollover: e.target.checked } })}
+            />
+            Roll leftover budgets into next month
+          </label>
+          {sts.flexCarry > 0 && (
+            <span className="small muted money">{fmt(sts.flexCarry)} carried into {monthLabel} from earlier months</span>
+          )}
+        </div>
       </div>
 
       {needsReview.length > 0 && (
@@ -352,22 +399,99 @@ export default function Budget() {
           {head}
           <tbody>{renderRows(FIXED_CATS, { showPace: false })}</tbody>
         </table>
-        {recurring.length > 0 && (
-          <details className="advanced">
-            <summary>Detected recurring bills ({recurring.length} · ~{fmt(recurring.reduce((s, r) => s + r.monthlyCost, 0))}/mo) — sanity-check your fixed budgets against these</summary>
-            <p className="muted small" style={{ margin: '8px 0 0' }}>
-              {recurring.slice(0, 12).map(r => `${r.merchant.toLowerCase()} ${fmt(r.monthlyCost)}`).join(' · ')}
-            </p>
-          </details>
-        )}
       </div>
 
+      {recurring.length > 0 && (
+        <div className="card">
+          <h2>
+            <span className="icon-chip"><Icon name="calendar" /></span>
+            Bills &amp; subscriptions
+            <span className="badge">~{fmt(activeBills.reduce((s, r) => s + r.monthlyCost, 0))}/mo</span>
+          </h2>
+          <p className="muted small">
+            Detected from your transaction history. Confirm the real ones so they're tracked; mark one-offs
+            “not a bill” to drop them from Upcoming bills. Sanity-check your fixed budgets against this total.
+          </p>
+          <table className="table">
+            <thead>
+              <tr><th>Bill</th><th>Cadence</th><th>Next due</th><th className="num">~Monthly</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              {activeBills.slice(0, 15).map(r => {
+                const paid = paidThisMonth(r)
+                const confirmed = prefFor(r.merchant)?.status === 'confirmed'
+                return (
+                  <tr key={r.merchant}>
+                    <td>{r.merchant.toLowerCase()}</td>
+                    <td className="small">{r.cadence} · {fmt(r.medianAmount, { maximumFractionDigits: 2 })}</td>
+                    <td className="small nowrap">
+                      {paid
+                        ? <span className="delta-chip"><Icon name="check" size={11} /> paid this month</span>
+                        : new Date(nextDue(r) + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </td>
+                    <td className="num">{fmt(r.monthlyCost)}</td>
+                    <td>
+                      {confirmed
+                        ? <span className="badge">confirmed</span>
+                        : <button className="chip" onClick={() => setBillPref(r.merchant, 'confirmed')}>Confirm</button>}
+                    </td>
+                    <td className="row-actions">
+                      <button className="btn ghost small" onClick={() => setBillPref(r.merchant, 'ignored')}>Not a bill</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {activeBills.length > 15 && <p className="muted small">…and {activeBills.length - 15} more detected.</p>}
+          {ignoredBills.length > 0 && (
+            <details className="advanced">
+              <summary>Ignored ({ignoredBills.length})</summary>
+              <div className="chip-row" style={{ marginTop: 8 }}>
+                {ignoredBills.map(r => (
+                  <button key={r.merchant} className="chip" onClick={() => setBillPref(r.merchant, null)}
+                    title="Restore to the bills list">
+                    {r.merchant.toLowerCase()} <Icon name="x" size={11} />
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
       <div className="card">
-        <h2>
-          <span className="icon-chip"><Icon name="pie-chart" /></span>
-          Flexible envelopes
-          <span className="badge">{fmt(sts.flexBudgeted)}/mo planned</span>
-        </h2>
+        <div className="page-head" style={{ marginBottom: 0 }}>
+          <h2>
+            <span className="icon-chip"><Icon name="pie-chart" /></span>
+            Flexible envelopes
+            <span className="badge">{fmt(sts.flexBudgeted)}/mo planned</span>
+          </h2>
+          <button className="btn small" onClick={() => setMoveOpen(o => !o)} title="Shift budget between envelopes for this month">
+            ⇄ Move money
+          </button>
+        </div>
+        {moveOpen && (
+          <div className="row gap wrap form-in" style={{ marginTop: 10, alignItems: 'center' }}>
+            <select value={move.from} aria-label="Move from category" onChange={e => setMove(m => ({ ...m, from: e.target.value }))}>
+              <option value="">From…</option>
+              {flexCats.map(c => <option key={c} value={c}>{c} ({fmt(budgets[c] || 0)})</option>)}
+            </select>
+            <span aria-hidden>→</span>
+            <select value={move.to} aria-label="Move to category" onChange={e => setMove(m => ({ ...m, to: e.target.value }))}>
+              <option value="">To…</option>
+              {flexCats.filter(c => c !== move.from).map(c => <option key={c} value={c}>{c} ({fmt(budgets[c] || 0)})</option>)}
+            </select>
+            <span className="input-money" style={{ width: 100 }}>
+              <input type="number" inputMode="decimal" placeholder="0" value={move.amt}
+                onChange={e => setMove(m => ({ ...m, amt: e.target.value }))} />
+            </span>
+            <button className="btn primary small" onClick={applyMove}
+              disabled={!move.from || !move.to || !(parseFloat(move.amt) > 0)}>
+              Move for {monthLabel.split(' ')[0]}
+            </button>
+          </div>
+        )}
         {state.transactions.length === 0 && (
           <div className="alert info">
             <span className="alert-icon"><Icon name="info" size={15} /></span>

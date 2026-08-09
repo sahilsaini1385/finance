@@ -3,6 +3,7 @@ import { useStore, fmt } from '../store.jsx'
 import { computeTotals, getRecommendations } from '../lib/advisor.js'
 import { localMonth } from '../lib/dates.js'
 import { detectRecurring, upcomingBills } from '../lib/savings.js'
+import { txParts } from '../lib/tx.js'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
 
@@ -74,8 +75,10 @@ export default function Dashboard({ onNavigate }) {
     const m = {}
     for (const t of state.transactions) {
       if (monthKey(t.date) !== thisMonth) continue
-      if (t.category === 'Transfers' || t.category === 'Investments' || t.category === 'Income') continue
-      m[t.category] = (m[t.category] || 0) + -t.amount // refunds/reimbursements net out
+      for (const p of txParts(t)) {
+        if (p.category === 'Transfers' || p.category === 'Investments' || p.category === 'Income') continue
+        m[p.category] = (m[p.category] || 0) + -p.amount // refunds/reimbursements net out
+      }
     }
     return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8)
   }, [state.transactions, thisMonth])
@@ -84,9 +87,10 @@ export default function Dashboard({ onNavigate }) {
   const alerts = recs.filter(r => r.severity === 'critical' || r.severity === 'warning')
 
   const upcoming = useMemo(() => {
-    const recurring = detectRecurring(state.transactions)
+    const ignored = new Set((state.billPrefs || []).filter(p => p.status === 'ignored').map(p => p.merchant))
+    const recurring = detectRecurring(state.transactions).filter(r => !ignored.has(r.merchant))
     return upcomingBills(recurring, state.insurance, 30)
-  }, [state.transactions, state.insurance])
+  }, [state.transactions, state.insurance, state.billPrefs])
 
   const maxFlow = Math.max(1, ...months.map(k => Math.max(flows[k].income, flows[k].expense)))
   const maxCat = Math.max(1, ...spendByCat.map(([, v]) => v))
