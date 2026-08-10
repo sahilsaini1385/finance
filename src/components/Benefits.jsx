@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
+import { parseBenefitsStatement, toAppEntities } from '../lib/benefitsImport.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -25,12 +26,118 @@ const BENEFIT_TYPES = [
 
 const blank = { name: '', type: '401(k) / 403(b)', provider: '', annualValue: '', enrolled: 'yes', notes: '' }
 
+const PAY_FREQS = [
+  ['12', 'Monthly'],
+  ['24', 'Semi-monthly (twice a month)'],
+  ['26', 'Every 2 weeks'],
+  ['52', 'Weekly'],
+]
+
+// Paste-a-statement importer: parses an employer benefits confirmation
+// statement (Amazon A-to-Z format) into insurance policies + benefit rows.
+function StatementImport({ state, dispatch, toast, onClose }) {
+  const [text, setText] = useState('')
+  const [freq, setFreq] = useState('12')
+  const [baseSalary, setBaseSalary] = useState('')
+
+  const items = useMemo(() => (text.trim().length > 40 ? parseBenefitsStatement(text) : []), [text])
+  const ops = useMemo(() => (items.length
+    ? toAppEntities(items, {
+        periodsPerYear: parseInt(freq, 10),
+        baseSalary: parseFloat(baseSalary) || 0,
+        existingInsurance: state.insurance,
+        existingBenefits: state.benefits,
+      })
+    : null), [items, freq, baseSalary, state.insurance, state.benefits])
+
+  const apply = () => {
+    let added = 0, updated = 0
+    for (const op of ops.policies) {
+      if (op.action === 'add') { dispatch({ type: 'ADD_INSURANCE', payload: { ...op.data, id: uid() } }); added++ }
+      else { dispatch({ type: 'UPDATE_INSURANCE', payload: { ...op.data, id: op.id } }); updated++ }
+    }
+    for (const op of ops.benefits) {
+      if (op.action === 'add') { dispatch({ type: 'ADD_BENEFIT', payload: { ...op.data, id: uid() } }); added++ }
+      else { dispatch({ type: 'UPDATE_BENEFIT', payload: { ...op.data, id: op.id } }); updated++ }
+    }
+    toast(`Imported: ${added} added, ${updated} updated`, { kind: 'good' })
+    onClose()
+  }
+
+  return (
+    <div className="card form-in">
+      <h2>Import from a benefits statement</h2>
+      <p className="small muted">
+        Open your benefits confirmation statement (Amazon: A to Z → Benefits → confirmation PDF), select all
+        the text, and paste it below. Policies land in the Insurance tab, programs land here. Parsing happens
+        entirely in your browser, and dependent or beneficiary names are never read.
+      </p>
+      <textarea
+        rows={7}
+        style={{ width: '100%', resize: 'vertical' }}
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder="Paste the statement text here…"
+        aria-label="Statement text"
+      />
+      <div className="form-grid" style={{ marginTop: 10 }}>
+        <label>Pay frequency (statement costs are per pay period)
+          <select value={freq} onChange={e => setFreq(e.target.value)}>
+            {PAY_FREQS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label>Annual base salary (optional)
+          <span className="input-money">
+            <input type="number" step="1000" inputMode="decimal" value={baseSalary} onChange={e => setBaseSalary(e.target.value)}
+              placeholder="sizes 2×/5× salary coverage" />
+          </span>
+        </label>
+      </div>
+      {text.trim().length > 40 && items.length === 0 && (
+        <p className="small muted">Nothing recognized yet — make sure the elections table (“Benefit / Plan / Coverage / Cost” rows) is included in the paste.</p>
+      )}
+      {ops && (
+        <>
+          <table className="table" style={{ marginTop: 8 }}>
+            <thead><tr><th>Found</th><th>Goes to</th><th className="num">Monthly cost</th><th>Action</th></tr></thead>
+            <tbody>
+              {ops.policies.map((op, i) => (
+                <tr key={`p${i}`}>
+                  <td>{op.label || op.data.policyName}</td>
+                  <td className="small">Insurance · {op.data.type || 'update'}</td>
+                  <td className="num">{op.data.premium ? fmt(op.data.premium) : '—'}</td>
+                  <td className="small">{op.action === 'add' ? 'add' : 'update existing'}</td>
+                </tr>
+              ))}
+              {ops.benefits.map((op, i) => (
+                <tr key={`b${i}`}>
+                  <td>{op.label || op.data.name}</td>
+                  <td className="small">Benefits</td>
+                  <td className="num">{op.data.annualValue > 0 ? `${fmt(op.data.annualValue / 12)}` : '—'}</td>
+                  <td className="small">{op.action === 'add' ? 'add' : 'update existing'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="form-actions" style={{ marginTop: 10 }}>
+            <button className="btn primary" onClick={apply}>
+              Import {ops.policies.length + ops.benefits.length} items
+            </button>
+            <button className="btn" onClick={onClose}>Cancel</button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function Benefits() {
   const { state, dispatch } = useStore()
   const toast = useToast()
   const [form, setForm] = useState(blank)
   const [editingId, setEditingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [armedId, setArmedId] = useState(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -72,18 +179,27 @@ export default function Benefits() {
             Estimated annual value on record: <strong>{fmt(totalValue)}</strong>
           </p>
         </div>
-        <button
-          className="btn primary"
-          onClick={() => {
-            if (editingId) setShowForm(true) // switch edit → blank create, don't discard-and-close
-            else setShowForm(s => !s)
-            setEditingId(null)
-            setForm(blank)
-          }}
-        >
-          <Icon name="plus" size={14} /> Add benefit
-        </button>
+        <div className="row gap">
+          <button className="btn" onClick={() => setShowImport(s => !s)}>
+            <Icon name="upload" size={14} /> Import statement
+          </button>
+          <button
+            className="btn primary"
+            onClick={() => {
+              if (editingId) setShowForm(true) // switch edit → blank create, don't discard-and-close
+              else setShowForm(s => !s)
+              setEditingId(null)
+              setForm(blank)
+            }}
+          >
+            <Icon name="plus" size={14} /> Add benefit
+          </button>
+        </div>
       </div>
+
+      {showImport && (
+        <StatementImport state={state} dispatch={dispatch} toast={toast} onClose={() => setShowImport(false)} />
+      )}
 
       {notEnrolled.length > 0 && (
         <div className="alert warning">
@@ -126,13 +242,16 @@ export default function Benefits() {
         </form>
       )}
 
-      {state.benefits.length === 0 && !showForm ? (
+      {state.benefits.length === 0 && !showForm && !showImport ? (
         <div className="card">
           <div className="empty">
             <Icon name="gift" />
             <strong>No benefits tracked yet</strong>
-            <span className="small">Log everything your employer offers — enrolled or not — so nothing goes unused at open enrollment.</span>
-            <button className="btn primary" onClick={() => setShowForm(true)}><Icon name="plus" size={14} /> Add benefit</button>
+            <span className="small">Log everything your employer offers — enrolled or not — so nothing goes unused at open enrollment. Fastest path: paste your benefits confirmation statement.</span>
+            <div className="row gap">
+              <button className="btn primary" onClick={() => setShowImport(true)}><Icon name="upload" size={14} /> Import statement</button>
+              <button className="btn" onClick={() => setShowForm(true)}><Icon name="plus" size={14} /> Add benefit</button>
+            </div>
           </div>
         </div>
       ) : state.benefits.length > 0 && (

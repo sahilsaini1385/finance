@@ -68,6 +68,9 @@ export function buildFinancialContext(state) {
     },
     lastMonth: { income: r0(prev.income), spend: r0(prev.spend) },
     recurringBills: bills,
+    workBenefits: (state.benefits || []).map(b => ({
+      name: b.name, type: b.type, annualValue: r0(b.annualValue), enrolled: b.enrolled !== 'no',
+    })),
     insurance: (state.insurance || []).map(p => {
       const base = {
         type: p.type, provider: p.provider, coverage: r0(p.coverageAmount),
