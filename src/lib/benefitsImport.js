@@ -150,7 +150,7 @@ export function toAppEntities(items, { periodsPerYear = 12, baseSalary = 0, exis
         name: cat.key === 'legal' && item.plan ? `Legal Services (${item.plan})` : item.label,
         type: cat.benefitType, provider: '', enrolled: 'yes',
         annualValue: annual ? String(annual) : '0',
-        notes: annual ? `~$${annual.toLocaleString()}/yr via payroll` : 'Employer-provided, no cost',
+        notes: annual ? `~$${Math.round(annual).toLocaleString()}/yr via payroll` : 'Employer-provided, no cost',
       }
       const match = existingBenefits.find(b => b.name.toLowerCase().startsWith(item.label.split(' ')[0].toLowerCase()))
       // Updates only refresh the numbers — never rename or overwrite notes
