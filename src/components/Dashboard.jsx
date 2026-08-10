@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { computeTotals, getRecommendations } from '../lib/advisor.js'
+import { monthActivity } from '../lib/budget.js'
 import { localMonth } from '../lib/dates.js'
 import { detectRecurring, upcomingBills } from '../lib/savings.js'
 import { txParts } from '../lib/tx.js'
+import ConflictBanner from './ConflictBanner.jsx'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
 
@@ -59,16 +61,15 @@ export default function Dashboard({ onNavigate }) {
   useEffect(() => setMounted(true), [])
 
   const months = useMemo(() => lastNMonths(6), [])
+  // Canonical month definition (budget.js monthActivity): income = Income
+  // category only; spend excludes Income/Transfers/Investments with refunds
+  // netted. The old any-positive-is-income rule counted 401(k) rollovers as
+  // income and brokerage buys as spending.
   const flows = useMemo(() => {
-    const m = Object.fromEntries(months.map(k => [k, { income: 0, expense: 0 }]))
-    for (const t of state.transactions) {
-      const k = monthKey(t.date)
-      if (!(k in m)) continue
-      for (const p of txParts(t)) {
-        if (p.category === 'Transfers') continue
-        if (p.amount > 0) m[k].income += p.amount
-        else m[k].expense += -p.amount
-      }
+    const m = {}
+    for (const k of months) {
+      const { income, spentByCat } = monthActivity(state, k)
+      m[k] = { income, expense: Object.values(spentByCat).reduce((s, v) => s + v, 0) }
     }
     return m
   }, [state.transactions, months])
@@ -123,6 +124,7 @@ export default function Dashboard({ onNavigate }) {
   return (
     <div className="page">
       <h1>Overview</h1>
+      <ConflictBanner surface="dashboard" />
 
       {doneCount < 4 && (
         <div className="card">

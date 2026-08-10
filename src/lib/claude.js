@@ -150,6 +150,13 @@ export function advisorSystemPrompt(contextJson) {
         'income or childcare the family would need to replace. Quantify recommendations in premium dollars ' +
         'saved or coverage dollars gained, using the premiums and coverage amounts in the snapshot.\n\n' +
 
+        'DATA PROVENANCE — the snapshot reconciles overlapping sources and labels each figure. ' +
+        'Payroll-verified numbers (parsed pay statements) beat typed profile estimates; W-2 figures describe ' +
+        'their labeled PRIOR tax year and must never be compared to current-year payroll without saying so. ' +
+        'When dataConflicts lists a disagreement, mention it and use the labeled winner — never average ' +
+        'conflicting sources, and never present a figure from a stale source as current. If hsaEligibility is ' +
+        '"unknown", ask about plan eligibility before recommending HSA contributions.\n\n' +
+
         'Ground every answer in the snapshot — quote their actual numbers, rounded to whole dollars. ' +
         'If the snapshot lacks what you need, say what to add in the app (Advisor profile, accounts, insurance). ' +
         'Keep responses focused and concise: lead with the direct answer, then at most a few supporting points. ' +

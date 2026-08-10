@@ -6,7 +6,8 @@ import {
   allCategories, EXCLUDED,
 } from '../lib/budget.js'
 import { detectRecurring, normalizeMerchant } from '../lib/savings.js'
-import { paystubMonthlyNet } from '../lib/income.js'
+import { paystubMonthlyNetMedian, paystubYearSummary, annualizeYtd } from '../lib/income.js'
+import { withinTolerance } from '../lib/facts.js'
 import { localMonth, localToday } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -85,7 +86,11 @@ export default function Budget() {
   const budgets = effectiveBudgets(state, month)
   const { income, spentByCat, needsReview } = useMemo(() => monthActivity(state, month), [state.transactions, month])
   const sts = useMemo(() => computeSafeToSpend(state, month), [state, month])
-  const stubNet = useMemo(() => paystubMonthlyNet(state, month), [state.paystubs, month])
+  const stubNet = useMemo(() => paystubMonthlyNetMedian(state, month), [state.paystubs, month])
+  const afterTaxMonthly = useMemo(() => {
+    const s = paystubYearSummary(state, month.slice(0, 4))
+    return s && s.ytd.k401AfterTax > 0 ? Math.round(annualizeYtd(s.ytd.k401AfterTax, s.latest.payDate) / 12) : 0
+  }, [state.paystubs, month])
   const { daysInMonth, dayOfMonth, isCurrent, daysLeft } = daysInfo(month)
   const sugg = useMemo(() => suggestions(state.transactions, thisMonth), [state.transactions, thisMonth])
   const recurring = useMemo(() => detectRecurring(state.transactions), [state.transactions])
@@ -349,7 +354,8 @@ export default function Budget() {
             </strong>
           </span>
         </div>
-        {stubNet && parseFloat(state.budgetConfig?.incomeTarget) > 0 && (
+        {stubNet && parseFloat(state.budgetConfig?.incomeTarget) > 0 &&
+          !withinTolerance('incomeTargetVsPaystub', parseFloat(state.budgetConfig.incomeTarget), stubNet.value) && (
           <p className="small muted money" style={{ marginTop: 8, marginBottom: 0 }}>
             Your Income tab shows <strong>{fmt(stubNet.value)}/mo</strong> of actual net pay ({stubNet.month} paystubs).{' '}
             <button className="btn ghost small" onClick={() => dispatch({ type: 'SET_BUDGET_CONFIG', payload: { incomeTarget: '' } })}>
@@ -361,6 +367,7 @@ export default function Budget() {
           <p className="small muted money" style={{ marginTop: 8, marginBottom: 0 }}>
             Income basis is your verified net pay from the Income tab ({stubNet.month} paystubs) — it updates
             automatically with each statement you add. Type a figure above to override it.
+            {afterTaxMonthly > 0 && ` Note: this net already excludes ~${fmt(afterTaxMonthly)}/mo you save via after-tax 401(k).`}
           </p>
         )}
         {sts.income.value > 0 && (

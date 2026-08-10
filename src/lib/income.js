@@ -134,9 +134,44 @@ function dedSum(stub, re) {
   }
 }
 
-export const K401_TRAD_RE = /401k(?!.*after)|401\(k\)(?!.*after)|401k-trad|403b/i
-export const K401_AFTER_RE = /401k after ?tax|after ?tax 401/i
+// Traditional must exclude after-tax, Roth, AND loan repayments anywhere in
+// the label — "Roth 401K" used to match the trad regex too and double-count
+// deferrals, and "401K Loan Payment" is debt service, not a contribution.
+export const K401_TRAD_RE = /^(?!.*roth)(?!.*after.?tax)(?!.*loan)[\s\S]*(?:401.?k|401\(k\)|403.?b)/i
+export const K401_AFTER_RE = /401.?k after.?tax|after.?tax.{0,8}401/i
 export const K401_ROTH_RE = /roth/i
+export const HSA_RE = /\bhsa\b|health sav/i
+
+// Detect pay frequency from the stubs themselves (period length in days).
+// Returns periods per year, or null when there's nothing to infer from.
+export function payFrequencyFromStubs(paystubs) {
+  const votes = {}
+  for (const s of paystubs || []) {
+    let days = 0
+    if (s.periodStart && s.periodEnd) {
+      days = Math.round((new Date(s.periodEnd + 'T00:00') - new Date(s.periodStart + 'T00:00')) / 86400000) + 1
+    }
+    let periods = null
+    if (days >= 26) periods = 12
+    else if (days >= 15) periods = 24
+    else if (days >= 12) periods = 26
+    else if (days >= 5) periods = 52
+    if (periods) votes[periods] = (votes[periods] || 0) + 1
+  }
+  const best = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]
+  return best ? Number(best[0]) : null
+}
+
+// Fraction of the year elapsed at a pay date (for annualizing YTD figures).
+export function yearFrac(payDate) {
+  const d = new Date(payDate + 'T00:00')
+  const start = new Date(`${d.getFullYear()}-01-01T00:00`)
+  return Math.min(1, Math.max(0.02, (d - start + 86400000) / (365 * 86400000)))
+}
+
+export function annualizeYtd(ytd, payDate) {
+  return (Number(ytd) || 0) / yearFrac(payDate)
+}
 
 // Latest paystub for a calendar year, plus the YTD picture the advisor and
 // AI context care about.
@@ -147,6 +182,8 @@ export function paystubYearSummary(state, year) {
   const trad = dedSum(latest, K401_TRAD_RE)
   const roth = dedSum(latest, K401_ROTH_RE)
   const after = dedSum(latest, K401_AFTER_RE)
+  const hsa = dedSum(latest, HSA_RE)
+  const rsu = (latest.earnings || []).filter(e => /rsu/i.test(e.label))
   return {
     year: String(year),
     employer: latest.employer,
@@ -159,9 +196,30 @@ export function paystubYearSummary(state, year) {
       k401Trad: trad.ytd,
       k401Roth: roth.ytd,
       k401AfterTax: after.ytd,
-      pretaxBenefits: (latest.deductions || []).filter(d => d.pretax && !K401_TRAD_RE.test(d.label)).reduce((s, d) => s + d.ytd, 0),
+      hsa: hsa.ytd,
+      rsuVested: rsu.reduce((s, e) => s + e.ytd, 0),
+      // NOTE: includes HSA rows (they are pre-tax); subtract ytd.hsa when you
+      // need premiums-only. Excludes ALL 401(k) rows — a provider that marks
+      // a Roth row pre-tax must not land it here (it would double-subtract
+      // from the taxable base).
+      pretaxBenefits: (latest.deductions || [])
+        .filter(d => d.pretax && !K401_TRAD_RE.test(d.label) && !K401_ROTH_RE.test(d.label) && !K401_AFTER_RE.test(d.label))
+        .reduce((s, d) => s + d.ytd, 0),
     },
   }
+}
+
+// Base-salary run rate from the "Regular" earnings row — the only source
+// that isolates base pay from RSU vests and bonuses.
+export function baseSalaryRunRate(state, year) {
+  const s = paystubYearSummary(state, year)
+  if (!s) return null
+  const regular = (s.latest.earnings || []).find(e => /^regular$/i.test(e.label))
+  if (!regular) return null
+  const freq = payFrequencyFromStubs(state.paystubs)
+  if (regular.amount > 0 && freq) return Math.round(regular.amount * freq)
+  if (regular.ytd > 0) return Math.round(annualizeYtd(regular.ytd, s.latest.payDate))
+  return null
 }
 
 // Usable (net) pay per month from parsed paystubs, for the budget's income
@@ -180,6 +238,32 @@ export function paystubMonthlyNet(state, month) {
   const prior = months.filter(m => m < month)
   const pick = prior.length ? prior[prior.length - 1] : months[months.length - 1]
   return { value: byMonth[pick], month: pick }
+}
+
+// Hardened budget basis: MEDIAN of the last 3 complete stub months, skipping
+// months with an RSU vest or a third paycheck — one lumpy month shouldn't
+// inflate safe-to-spend by thousands. Falls back to paystubMonthlyNet.
+export function paystubMonthlyNetMedian(state, month) {
+  const byMonth = {}
+  const lumpy = new Set()
+  const checks = {}
+  for (const s of state.paystubs || []) {
+    const m = (s.payDate || '').slice(0, 7)
+    if (!m || !(s.net > 0)) continue
+    byMonth[m] = Math.round((byMonth[m] || 0) + s.net)
+    checks[m] = (checks[m] || 0) + 1
+    const vested = (s.earnings || []).some(e => /rsu/i.test(e.label) && e.amount > 0)
+    if (vested) lumpy.add(m)
+  }
+  const typicalChecks = Object.values(checks).sort((a, b) => a - b)[Math.floor(Object.keys(checks).length / 2)] || 1
+  for (const [m, n] of Object.entries(checks)) if (n > typicalChecks) lumpy.add(m)
+
+  const usable = Object.keys(byMonth).filter(m => m < month && !lumpy.has(m)).sort().slice(-3)
+  if (usable.length === 0) return paystubMonthlyNet(state, month)
+  const vals = usable.map(m => byMonth[m]).sort((a, b) => a - b)
+  const median = vals[Math.floor(vals.length / 2)]
+  const label = usable.length === 1 ? usable[0] : `median of ${usable[0]}…${usable[usable.length - 1]}`
+  return { value: median, month: label, months: usable }
 }
 
 // ---------- W-2 ----------

@@ -209,8 +209,10 @@ export default function Retirement() {
           {numInput('Volatility %', 'volatility', { placeholder: String(RETIREMENT_DEFAULTS.volatility), width: 70, title: 'Annual standard deviation of returns — the market’s mood swings' })}
         </div>
         <p className="muted small" style={{ marginBottom: 0 }}>
-          Working years add {fmt(params.annualContrib)}/yr from your 401(k) ({p.k401ContributionPct || 0}% + {p.employerMatchPct || 0}% match), IRA, HSA and extra savings —
-          edit those in the <strong>Advisor</strong> profile. Portfolio counted today: {fmt(totals.investments)} (retirement + brokerage + HSA accounts).
+          Working years add <strong>{fmt(params.annualContrib)}/yr</strong> ({params.contribSource.toLowerCase()}
+          {params.includesAfterTax ? ', includes your after-tax 401(k)' : ''}) — 401(k), match, IRA, HSA and extra savings.
+          {params.contribSource.includes('Payroll') ? ' Verified from your pay statements on the Income tab.' : ' Edit the inputs in the Advisor profile, or upload a pay statement for payroll-verified figures.'}
+          {' '}Spending basis: {params.expensesSource.toLowerCase()}. Portfolio counted today: {fmt(totals.investments)} (retirement + brokerage + HSA accounts).
         </p>
       </div>
 

@@ -2,6 +2,8 @@
 // dollars (real returns = nominal minus inflation) so every number on screen
 // is comparable to the user's current budget. Educational, not advice.
 
+import { resolveFacts } from './facts.js'
+
 const num = v => {
   const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
   return Number.isNaN(n) ? 0 : n
@@ -49,9 +51,12 @@ export function claimFactor(age) {
 export function retirementParams(state, investmentsTotal) {
   const p = state.profile || {}
   const r = state.retirement || {}
+  const { facts } = resolveFacts(state)
   const age = num(p.age)
-  const income = num(p.grossIncome)
-  const monthlyExpenses = num(p.monthlyExpenses)
+  // Reconciled facts beat raw profile fields: payroll-verified income and
+  // observed spending when available, typed estimates otherwise.
+  const income = facts.grossIncome?.value || num(p.grossIncome)
+  const monthlyExpenses = facts.monthlyExpenses?.value || num(p.monthlyExpenses)
 
   const missing = []
   if (!age) missing.push('age')
@@ -66,11 +71,12 @@ export function retirementParams(state, investmentsTotal) {
   const lifeExpectancy = Math.round(Math.max(retireAge + 1, num(r.lifeExpectancy) || RETIREMENT_DEFAULTS.lifeExpectancy))
   const ssClaimAge = Math.round(num(r.ssClaimAge) || RETIREMENT_DEFAULTS.ssClaimAge)
 
-  // Contributions while working (same math as the FI projection)
-  const k401 = income * (num(p.k401ContributionPct) / 100)
-  const match = income * (Math.min(num(p.employerMatchPct), num(p.k401ContributionPct)) / 100)
-  const annualContrib =
-    k401 + match + num(p.iraContribution) + num(p.hsaContribution) + num(r.extraMonthlySavings) * 12
+  // Contributions while working — the reconciled savings-rate bundle:
+  // payroll-verified 401(k) pace (incl. after-tax) when stubs exist,
+  // modeled from profile % of base salary otherwise.
+  const annualContrib = facts.annualContrib?.value ?? 0
+  const contribSource = facts.annualContrib?.source?.label || 'modeled'
+  const includesAfterTax = Boolean(facts.annualContrib?.includesAfterTax)
 
   const spendingMonthly = num(r.spendingMonthly) || Math.round(monthlyExpenses * RETIREMENT_DEFAULTS.spendingPct)
 
@@ -86,6 +92,10 @@ export function retirementParams(state, investmentsTotal) {
     lifeExpectancy,
     savings: Math.max(0, investmentsTotal),
     annualContrib,
+    contribSource,
+    includesAfterTax,
+    incomeSource: facts.grossIncome?.source?.label || 'your estimate',
+    expensesSource: facts.monthlyExpenses?.source?.label || 'your estimate',
     spendingAnnual: spendingMonthly * 12,
     spendingMonthly,
     ssClaimAge,

@@ -7,6 +7,7 @@ import { computeTotals } from '../lib/advisor.js'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
 import AskAdvisor from './AskAdvisor.jsx'
+import ConflictBanner from './ConflictBanner.jsx'
 
 const SEV_ICON = { critical: 'octagon-alert', warning: 'alert-triangle', info: 'lightbulb', good: 'check-circle' }
 const AREAS = [
@@ -67,6 +68,8 @@ export default function Advisor() {
       </div>
 
       <AskAdvisor />
+
+      <ConflictBanner surface="advisor" />
 
       {savings.recurring.length > 0 && (
         <div className="card">

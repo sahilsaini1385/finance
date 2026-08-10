@@ -5,41 +5,14 @@ import { localToday, localMonth } from './dates.js'
 import { txParts } from './tx.js'
 import { oopStatus } from './health.js'
 import { paystubYearSummary } from './income.js'
+import { LIMITS_BY_YEAR, TAX_TABLES_BY_YEAR, CURRENT_TAX_YEAR, limitsFor, estimateFederalTax } from './taxTables.js'
+import { resolveFacts, policyPremiumAnnual, toleranceFor } from './facts.js'
+import { buildTaxSummary } from './report.js'
 
-export const LIMITS_2026 = {
-  year: 2026,
-  k401: 24500,
-  k401CatchUp: 8000, // age 50+
-  ira: 7500,
-  iraCatchUp: 1100, // age 50+
-  hsaSelf: 4400,
-  hsaFamily: 8750,
-  hsaCatchUp: 1000, // age 55+
-  fsaHealth: 3400,
-  standardDeduction: { single: 16100, mfj: 32200, hoh: 24150 },
-}
-
-// 2026 marginal brackets on TAXABLE income (rough-estimate use only).
-export const TAX_BRACKETS_2026 = {
-  single: [[0, 0.10], [12400, 0.12], [50400, 0.22], [105700, 0.24], [201775, 0.32], [256225, 0.35], [640600, 0.37]],
-  mfj: [[0, 0.10], [24800, 0.12], [100800, 0.22], [211400, 0.24], [403550, 0.32], [512450, 0.35], [768700, 0.37]],
-  hoh: [[0, 0.10], [17700, 0.12], [67450, 0.22], [105700, 0.24], [201750, 0.32], [256200, 0.35], [640600, 0.37]],
-}
-
-export function estimateFederalTax(grossWages, filingStatus) {
-  const L = LIMITS_2026
-  const sd = L.standardDeduction[filingStatus] || L.standardDeduction.single
-  const taxable = Math.max(0, grossWages - sd)
-  const brackets = TAX_BRACKETS_2026[filingStatus] || TAX_BRACKETS_2026.single
-  let tax = 0
-  for (let i = 0; i < brackets.length; i++) {
-    const [floor, rate] = brackets[i]
-    const ceil = i + 1 < brackets.length ? brackets[i + 1][0] : Infinity
-    if (taxable <= floor) break
-    tax += (Math.min(taxable, ceil) - floor) * rate
-  }
-  return { taxable, tax: Math.round(tax) }
-}
+// Back-compat re-exports — tables now live year-keyed in taxTables.js.
+export const LIMITS_2026 = LIMITS_BY_YEAR[2026]
+export const TAX_BRACKETS_2026 = TAX_TABLES_BY_YEAR[2026]
+export { estimateFederalTax, LIMITS_BY_YEAR, TAX_TABLES_BY_YEAR, limitsFor }
 
 // Aggregates key figures across W-2 documents for the most recent tax year that has them.
 export function w2Summary(state) {
@@ -91,42 +64,75 @@ export function getRecommendations(state) {
   const L = LIMITS_2026
   const totals = computeTotals(state)
   const age = num(p.age)
-  const income = num(p.grossIncome)
+  // Reconciled facts: one income, one expenses, one debt figure everywhere —
+  // payroll/synced sources beat typed estimates (see facts.js for the policy).
+  const { facts } = resolveFacts(state)
+  const income = facts.grossIncome?.value || num(p.grossIncome)
+  const incomeVerified = facts.grossIncome?.source?.origin === 'payroll'
   const householdIncome = income + num(p.spouseIncome)
-  const monthlyExpenses = num(p.monthlyExpenses)
+  const monthlyExpenses = facts.monthlyExpenses?.value || num(p.monthlyExpenses)
   const dependents = num(p.dependents)
+  const payrollVerified = Boolean(facts.payroll)
   const push = (area, severity, title, detail) => recs.push({ id: `${area}-${recs.length}`, area, severity, title, detail })
 
   // ---------- Tax ----------
   if (income > 0) {
     const matchPct = num(p.employerMatchPct)
-    const contribPct = num(p.k401ContributionPct)
+    // Payroll-implied deferral % (of base salary) beats the typed % once
+    // stubs exist — the two used to produce contradictory match verdicts.
+    const typedPct = num(p.k401ContributionPct)
+    const impliedPct = payrollVerified && facts.k401Deferrals && facts.baseSalary?.value > 0
+      ? (facts.k401Deferrals.pace / facts.baseSalary.value) * 100
+      : null
+    const contribPct = impliedPct ?? typedPct
+    const matchBase = facts.baseSalary?.value || income
     if (matchPct > 0 && contribPct < matchPct) {
       push('tax', 'critical', 'You are leaving free money on the table',
-        `You contribute ${contribPct}% to your 401(k) but your employer matches up to ${matchPct}%. Raise your contribution to at least ${matchPct}% — the match is an instant 100% return (~$${Math.round(((matchPct - contribPct) / 100) * income).toLocaleString()}/yr you're currently forfeiting).`)
+        `You contribute ${contribPct.toFixed(1)}% to your 401(k)${impliedPct !== null ? ' (payroll-implied)' : ''} but your employer matches up to ${matchPct}%. Raise your contribution to at least ${matchPct}% — the match is an instant 100% return (~$${Math.round(((matchPct - contribPct) / 100) * matchBase).toLocaleString()}/yr modeled on your base salary).`)
     } else if (matchPct > 0) {
-      push('tax', 'good', 'Full employer 401(k) match captured', `You contribute ${contribPct}% which meets or exceeds the ${matchPct}% match threshold. Nice.`)
+      push('tax', 'good', 'Full employer 401(k) match captured', `You contribute ${Math.round(contribPct * 10) / 10}%${impliedPct !== null ? ' (payroll-implied)' : ''} which meets or exceeds the ${matchPct}% match threshold. Nice.`)
     }
 
-    const k401Dollars = (contribPct / 100) * income
-    const k401Limit = L.k401 + (age >= 50 ? L.k401CatchUp : 0)
-    if (k401Dollars > 0 && k401Dollars < k401Limit) {
-      push('tax', 'info', `Room left in your 401(k) (${L.year} limit: $${k401Limit.toLocaleString()})`,
-        `You're on track to contribute ~$${Math.round(k401Dollars).toLocaleString()} this year, leaving ~$${Math.round(k401Limit - k401Dollars).toLocaleString()} of tax-advantaged space. Every pre-tax dollar reduces taxable income now; Roth 401(k) dollars grow tax-free instead.${age >= 50 ? ' Includes your age-50+ catch-up allowance.' : ''}`)
-    } else if (k401Dollars >= k401Limit) {
-      push('tax', 'good', '401(k) maxed out', `You're at the ${L.year} employee limit of $${k401Limit.toLocaleString()}. Consider a mega-backdoor Roth if your plan allows after-tax contributions.`)
+    // SUPPRESSION: the profile-%-modeled 401(k) space rec only fires when no
+    // payroll data exists — otherwise the payroll-pace rec below is the only
+    // voice, so the list can never say both "room left" and "limit reached".
+    if (!payrollVerified) {
+      const k401Dollars = (typedPct / 100) * (facts.baseSalary?.value || income)
+      const k401Limit = L.k401 + (age >= 50 ? L.k401CatchUp : 0)
+      if (k401Dollars > 0 && k401Dollars < k401Limit) {
+        push('tax', 'info', `Room left in your 401(k) (${L.year} limit: $${k401Limit.toLocaleString()})`,
+          `Modeled from your ${typedPct}% deferral: ~$${Math.round(k401Dollars).toLocaleString()} this year, leaving ~$${Math.round(k401Limit - k401Dollars).toLocaleString()} of tax-advantaged space. Every pre-tax dollar reduces taxable income now; Roth 401(k) dollars grow tax-free instead. Upload a pay statement on the Income tab for payroll-verified tracking.`)
+      } else if (k401Dollars >= k401Limit) {
+        push('tax', 'good', '401(k) maxed out', `You're at the ${L.year} employee limit of $${k401Limit.toLocaleString()}.${facts.k401AfterTax ? '' : ' Consider a mega-backdoor Roth if your plan allows after-tax contributions.'}`)
+      }
     }
   }
 
-  if (p.hsaEligible !== 'no') {
-    const hsaLimit = (p.hsaEligible === 'family' ? L.hsaFamily : L.hsaSelf) + (age >= 55 ? L.hsaCatchUp : 0)
-    const hsa = num(p.hsaContribution)
-    if (hsa < hsaLimit) {
+  // HSA — tri-state eligibility: blank is UNKNOWN, not "yes". Recommending
+  // max-out to someone whose plan isn't HSA-eligible suggests an illegal
+  // excess contribution, so unknown gets a question, not a warning.
+  const hsaEligibility = facts.hsaStatus?.eligibility || 'unknown'
+  if (hsaEligibility === 'self' || hsaEligibility === 'family') {
+    const hsaLimit = (hsaEligibility === 'family' ? L.hsaFamily : L.hsaSelf) + (age >= 55 ? L.hsaCatchUp : 0)
+    const hsaRaw = facts.hsaStatus?.contribution?.value ?? num(p.hsaContribution)
+    const hsaVerified = facts.hsaStatus?.contribution?.source?.origin === 'payroll'
+    // Payroll figures are YTD — compare the annualized PACE against the
+    // annual limit, or an on-pace contributor gets nagged all year.
+    const hsa = hsaVerified && facts.payroll
+      ? Math.round(hsaRaw / Math.max(0.02, (new Date(facts.payroll.latest.payDate + 'T00:00') - new Date(`${localToday().slice(0, 4)}-01-01T00:00`) + 86400000) / (365 * 86400000)))
+      : hsaRaw
+    if (hsa < hsaLimit * 0.97) {
       push('tax', 'warning', 'HSA not maxed — the most tax-advantaged account that exists',
-        `HSAs are triple tax-advantaged: deductible going in, tax-free growth, tax-free out for medical costs. Your ${L.year} limit is $${hsaLimit.toLocaleString()} (${p.hsaEligible} coverage${age >= 55 ? ' + catch-up' : ''}); you've planned $${hsa.toLocaleString()}. If cash flow allows, pay medical bills out of pocket and let the HSA grow invested.`)
+        `HSAs are triple tax-advantaged: deductible going in, tax-free growth, tax-free out for medical costs. Your ${L.year} limit is $${hsaLimit.toLocaleString()} (${hsaEligibility} coverage${age >= 55 ? ' + catch-up' : ''}); ${hsaVerified ? `payroll pace projects ~$${hsa.toLocaleString()} for the year` : `you've planned $${hsaRaw.toLocaleString()}`}. If cash flow allows, pay medical bills out of pocket and let the HSA grow invested.`)
     } else {
-      push('tax', 'good', 'HSA maxed out', `You're at the ${L.year} HSA limit. Invest the balance rather than leaving it in cash, and save receipts — you can reimburse yourself decades later, tax-free.`)
+      push('tax', 'good', hsaVerified ? 'HSA on pace for the limit' : 'HSA maxed out', `You're ${hsaVerified ? `on pace for the ${L.year} HSA limit (payroll-verified)` : `at the ${L.year} HSA limit`}. Invest the balance rather than leaving it in cash, and save receipts — you can reimburse yourself decades later, tax-free.`)
     }
+  } else if (hsaEligibility === 'contributing') {
+    push('tax', 'info', 'HSA contributions detected in payroll',
+      `Payroll shows $${Math.round(facts.hsaStatus.contribution?.value || 0).toLocaleString()} of HSA contributions YTD, but your profile doesn't say whether your coverage is self-only or family — set it in the Advisor profile so the limit check can run.`)
+  } else if (hsaEligibility === 'unknown' && (state.insurance || []).some(pl => pl.type === 'health')) {
+    push('tax', 'info', 'Is your health plan HSA-eligible?',
+      'Your profile doesn\'t say. Only high-deductible plans qualify — if yours does, the HSA is the most tax-advantaged account there is; if not (most copay-based plans, like a $0-deductible plan), ignore HSA advice entirely. Set it in the Advisor profile.')
   }
 
   const ira = num(p.iraContribution)
@@ -143,17 +149,19 @@ export function getRecommendations(state) {
   push('tax', 'info', `Standard deduction for ${L.year}: $${sd.toLocaleString()} (${filing.toUpperCase()})`,
     'Itemize only if mortgage interest + state/local taxes (capped) + charitable gifts exceed this. If you\'re close to the line, "bunch" two years of charitable giving into one year (a donor-advised fund makes this easy) and take the standard deduction the other year.')
 
-  // W-2 document review
+  // W-2 document review — PRIOR tax year, estimated with THAT year's
+  // brackets. Demoted to info when current-year payroll data exists, so at
+  // most one withholding message carries weight in the list.
   const w2 = w2Summary(state)
   if (w2 && w2.wages > 0) {
-    const { tax } = estimateFederalTax(w2.wages, p.filingStatus)
+    const { tax, year: estYear } = estimateFederalTax(w2.wages, p.filingStatus, Number(w2.year))
     const diff = Math.round(w2.fedWithholding - tax)
     if (Math.abs(diff) > 1000) {
-      push('tax', diff < 0 ? 'warning' : 'info',
+      push('tax', payrollVerified ? 'info' : diff < 0 ? 'warning' : 'info',
         diff < 0
-          ? `Your ${w2.year} W-2${w2.count > 1 ? 's' : ''} suggest under-withholding (~$${Math.abs(diff).toLocaleString()} owed)`
-          : `Your ${w2.year} W-2${w2.count > 1 ? 's' : ''} suggest a large refund (~$${diff.toLocaleString()})`,
-        `Rough estimate from Box 1 wages ($${Math.round(w2.wages).toLocaleString()}) with the standard deduction: federal tax ≈ $${tax.toLocaleString()} vs. $${Math.round(w2.fedWithholding).toLocaleString()} withheld (Box 2). ${diff < 0 ? 'Owing at filing can also mean underpayment penalties — adjust your W-4 or make estimated payments.' : 'A big refund is an interest-free loan to the IRS — adjust your W-4 to keep that money in your paycheck (and invested) during the year.'} Estimate ignores credits, other income, and itemizing — verify with real filing software or a CPA.`)
+          ? `${w2.year} tax year: your W-2${w2.count > 1 ? 's' : ''} suggest under-withholding (~$${Math.abs(diff).toLocaleString()} owed)`
+          : `${w2.year} tax year: your W-2${w2.count > 1 ? 's' : ''} suggest a large refund (~$${diff.toLocaleString()})`,
+        `Rough estimate from Box 1 wages ($${Math.round(w2.wages).toLocaleString()}) with the ${estYear} standard deduction and brackets: federal tax ≈ $${tax.toLocaleString()} vs. $${Math.round(w2.fedWithholding).toLocaleString()} withheld (Box 2). ${diff < 0 ? 'Owing at filing can also mean underpayment penalties — adjust your W-4 or make estimated payments.' : 'A big refund is an interest-free loan to the IRS — adjust your W-4 to keep that money in your paycheck (and invested) during the year.'} Estimate ignores credits, other income, and itemizing — verify with real filing software or a CPA.${payrollVerified ? ' Your current-year withholding is tracked from payroll below.' : ''}`)
     } else {
       push('tax', 'good', `Withholding on your ${w2.year} W-2 looks well-calibrated`,
         `Estimated federal tax ≈ $${tax.toLocaleString()} vs. $${Math.round(w2.fedWithholding).toLocaleString()} withheld — within $1,000. Nice.`)
@@ -167,21 +175,23 @@ export function getRecommendations(state) {
     }
   }
 
-  // Home / mortgage documents context
+  // Itemize vs standard — ONE shared formula (buildTaxSummary's: mortgage
+  // interest on the reconciled balance + property tax + Giving transactions)
+  // so this rec and the AI's verdict can never disagree near the threshold.
   const home = state.home || {}
-  const mortBalance = num(home.mortgageBalance)
   const mortRate = num(home.mortgageRate)
-  if (mortBalance > 0 && mortRate > 0) {
-    const annualInterest = Math.round(mortBalance * (mortRate / 100))
-    const propTax = num(home.propertyTaxAnnual)
-    const sdHome = L.standardDeduction[p.filingStatus] || L.standardDeduction.single
-    const itemizable = annualInterest + propTax
+  const curYear = Number(localToday().slice(0, 4))
+  const ts = buildTaxSummary(state, curYear, limitsFor(curYear))
+  if (ts.itemizableEst > 0 && ts.standardDeduction > 0) {
+    const itemizable = Math.round(ts.itemizableEst)
+    const sdHome = ts.standardDeduction
+    const parts = `mortgage interest ~$${Math.round(ts.deductions.mortgageInterestEst).toLocaleString()}${mortRate ? ` (${mortRate}%${facts.mortgageBalance ? ` on $${facts.mortgageBalance.value.toLocaleString()}` : ''})` : ''} + property tax $${Math.round(ts.deductions.propertyTax).toLocaleString()} + charitable giving $${Math.round(ts.deductions.giving).toLocaleString()}`
     if (itemizable > sdHome) {
       push('tax', 'warning', `Itemizing may beat the standard deduction (~$${itemizable.toLocaleString()} vs $${sdHome.toLocaleString()})`,
-        `Estimated mortgage interest (~$${annualInterest.toLocaleString()} at ${mortRate}% on $${mortBalance.toLocaleString()}) plus property tax ($${propTax.toLocaleString()}) exceeds your standard deduction — before even counting state income tax and charitable gifts. Check Schedule A at filing time; keep your Form 1098 in the Taxes section.`)
+        `${parts} exceeds your standard deduction — before even counting state income tax. Check Schedule A at filing time; keep your Form 1098 in the Taxes section.`)
     } else if (itemizable > sdHome * 0.75) {
       push('tax', 'info', 'Close to the itemizing line',
-        `Mortgage interest + property tax ≈ $${itemizable.toLocaleString()} vs. a $${sdHome.toLocaleString()} standard deduction. Bunching charitable gifts into one year could push you over in alternating years.`)
+        `${parts} ≈ $${itemizable.toLocaleString()} vs. a $${sdHome.toLocaleString()} standard deduction. Bunching charitable gifts into one year could push you over in alternating years.`)
     }
   }
 
@@ -199,12 +209,10 @@ export function getRecommendations(state) {
   // ---------- Payroll (parsed pay statements — verified numbers beat estimates) ----------
   const payYear = localToday().slice(0, 4)
   const stubSum = paystubYearSummary(state, payYear)
-  if (stubSum) {
+  if (stubSum && payrollVerified) {
     const k401Limit = L.k401 + (age >= 50 ? L.k401CatchUp : 0)
-    const employee401k = stubSum.ytd.k401Trad + stubSum.ytd.k401Roth
-    const d = new Date(stubSum.latest.payDate + 'T00:00')
-    const frac = Math.min(1, Math.max(0.02, (d - new Date(`${payYear}-01-01T00:00`) + 86400000) / (365 * 86400000)))
-    const projected = employee401k / frac
+    const employee401k = facts.k401Deferrals?.value ?? 0
+    const projected = facts.k401Deferrals?.pace ?? 0
     if (employee401k >= k401Limit) {
       push('tax', 'good', `401(k) employee limit reached (payroll-verified)`,
         `Your pay statements show $${Math.round(employee401k).toLocaleString()} of employee deferrals — the ${payYear} limit is done. Anything further goes to after-tax (mega-backdoor) if your plan allows.`)
@@ -216,20 +224,37 @@ export function getRecommendations(state) {
       push('tax', 'info', `$${Math.round(stubSum.ytd.k401AfterTax).toLocaleString()} of after-tax 401(k) this year — confirm the Roth conversion is automatic`,
         `After-tax contributions only become the mega-backdoor Roth when they're converted; unconverted, their growth is taxed later. Most plans (including Amazon's) offer automatic daily in-plan Roth conversion — verify it's switched on with your plan administrator.`)
     }
+    // Current-year withholding vs liability, payroll-verified — the one
+    // withholding rec that fires with weight when stubs exist.
+    const wh = facts.withholding
+    if (wh) {
+      const t = toleranceFor('withholding')
+      if (Math.abs(wh.gap) > Math.max(t.abs, t.rel * wh.expectedYtd)) {
+        push('tax', wh.gap < 0 ? 'warning' : 'info',
+          wh.gap < 0
+            ? `${payYear} withholding running ~$${Math.abs(wh.gap).toLocaleString()} behind your estimated liability`
+            : `${payYear} withholding running ~$${wh.gap.toLocaleString()} ahead — a refund in the making`,
+          `Payroll shows $${wh.value.toLocaleString()} of federal tax withheld YTD vs ~$${wh.expectedYtd.toLocaleString()} expected by now on your annualized taxable pace (~$${wh.taxableAnnual.toLocaleString()}, standard deduction, ${payYear} brackets). ${wh.gap < 0 ? 'RSU vests often withhold at the 22% supplemental rate while your marginal rate is higher — a common cause. Consider extra withholding on your W-4 or estimated payments to avoid penalties.' : 'Over-withholding is an interest-free loan to the IRS — adjust your W-4 if you\'d rather have it during the year.'} Rough estimate; credits and itemizing not included.`)
+      }
+    }
   }
 
   // ---------- Insurance ----------
   const lifeCoverage = coverageOf(state, 'life')
   const someoneDependsOnIncome = dependents > 0 || (p.filingStatus === 'mfj' && num(p.spouseIncome) < income * 0.5)
-  // DIME: Debt + Income replacement (10x) + Mortgage + Education
+  // DIME: Debt + Income replacement (10x) + Mortgage + Education — all four
+  // inputs reconciled, so this cites the same debt/income figures as every
+  // other rec in the list.
+  const dimeDebt = facts.nonMortgageDebt?.value ?? num(p.otherDebt)
+  const dimeMortgage = facts.mortgageBalance?.value ?? num(p.mortgageBalance)
   const dime = income > 0 && someoneDependsOnIncome
-    ? num(p.otherDebt) + income * 10 + num(p.mortgageBalance) + num(p.educationNeeds)
+    ? dimeDebt + income * 10 + dimeMortgage + num(p.educationNeeds)
     : 0
   if (dime > 0) {
     if (lifeCoverage < dime) {
       push('insurance', lifeCoverage === 0 ? 'critical' : 'warning',
         `Life insurance gap: ~$${Math.round((dime - lifeCoverage) / 1000) * 1000 >= 1000 ? ((dime - lifeCoverage) / 1000000).toFixed(2) + 'M' : (dime - lifeCoverage).toLocaleString()} short of estimated need`,
-        `DIME estimate (Debt $${num(p.otherDebt).toLocaleString()} + 10× income $${(income * 10).toLocaleString()} + mortgage $${num(p.mortgageBalance).toLocaleString()} + education $${num(p.educationNeeds).toLocaleString()}) ≈ $${dime.toLocaleString()} of coverage. You have $${lifeCoverage.toLocaleString()}. Level-term insurance (20–30 yr) is cheap while you're healthy; skip whole-life unless you have a specific estate need.`)
+        `DIME estimate (Debt $${Math.round(dimeDebt).toLocaleString()} + 10× income $${Math.round(income * 10).toLocaleString()}${incomeVerified ? ' (payroll-verified)' : ''} + mortgage $${Math.round(dimeMortgage).toLocaleString()} + education $${num(p.educationNeeds).toLocaleString()}) ≈ $${Math.round(dime).toLocaleString()} of coverage. You have $${lifeCoverage.toLocaleString()}. Level-term insurance (20–30 yr) is cheap while you're healthy; skip whole-life unless you have a specific estate need.`)
     } else if (lifeCoverage > 0) {
       push('insurance', 'good', 'Life insurance meets DIME estimate', `Coverage of $${lifeCoverage.toLocaleString()} meets the estimated need. Re-check after major life events (new child, new house).`)
     }
@@ -341,10 +366,12 @@ export function getRecommendations(state) {
     }
   }
 
-  const totalAnnualPremiums = Math.round(state.insurance.reduce((s, pl) => s + annualPremiumOf(pl), 0))
+  // Premiums prefer the live payroll deduction over the imported snapshot.
+  const premiumOf = pl => policyPremiumAnnual(state, pl)?.value ?? annualPremiumOf(pl)
+  const totalAnnualPremiums = Math.round(state.insurance.reduce((s, pl) => s + premiumOf(pl), 0))
   if (householdIncome > 0 && totalAnnualPremiums > householdIncome * 0.08) {
-    const top = [...state.insurance].sort((a, b) => annualPremiumOf(b) - annualPremiumOf(a)).slice(0, 3)
-      .map(pl => `${pl.policyName || pl.provider || pl.type} ($${Math.round(annualPremiumOf(pl)).toLocaleString()}/yr)`).join(', ')
+    const top = [...state.insurance].sort((a, b) => premiumOf(b) - premiumOf(a)).slice(0, 3)
+      .map(pl => `${pl.policyName || pl.provider || pl.type} ($${Math.round(premiumOf(pl)).toLocaleString()}/yr)`).join(', ')
     push('insurance', 'info', `Insurance eats ${Math.round((totalAnnualPremiums / householdIncome) * 100)}% of household income ($${totalAnnualPremiums.toLocaleString()}/yr)`,
       `Above ~8% is worth a deliberate review. Biggest lines: ${top}. Re-shop the shoppable ones (auto/home routinely price loyalty penalties), raise deductibles where cash reserves allow, and drop low-payout add-ons.`)
   }
@@ -363,6 +390,10 @@ export function getRecommendations(state) {
     } else if (oop.pct >= 0.75) {
       push('insurance', 'info', `${Math.round(oop.pct * 100)}% of the way to your out-of-pocket max`,
         `$${Math.round(oop.spent).toLocaleString()} of the $${oop.oopMax.toLocaleString()} in-network max on "${pol.policyName || pol.provider}" — $${Math.round(oop.remaining).toLocaleString()} to go before the ${resetDate} reset. If more care is coming this plan year, once you cross the max the rest is fully covered — worth weighing when scheduling elective care.`)
+    }
+    if (oop.staleManual) {
+      push('insurance', 'info', 'Your out-of-pocket portal figure looks stale',
+        `Health-category spending this plan year ($${Math.round(oop.auto).toLocaleString()}) has pulled well ahead of the figure you recorded from the insurer's portal ($${Math.round(oop.spent).toLocaleString()}${oop.manualAsOf ? ` on ${oop.manualAsOf}` : ''}). Claims may have processed since — check the portal and update the policy so the "care is free after the max" alert can't miss.`)
     }
   }
 

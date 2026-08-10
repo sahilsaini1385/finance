@@ -169,10 +169,13 @@ export function toAppEntities(items, { periodsPerYear = 12, baseSalary = 0, exis
     let policyName = item.label
     if (item.plan) policyName = `${item.plan}${item.tier ? ` — ${item.tier}` : ''}`
     else if (item.tier) policyName = `${item.label} — ${item.tier}`
+    let salaryMultiple = ''
     if (cat.wantMultiple && item.multiple > 0) {
-      const multLabel = item.multiple < 1 ? `${item.multiple}×` : `${item.multiple}×`
-      policyName = `${item.label} — ${multLabel} base salary`
+      policyName = `${item.label} — ${item.multiple}× base salary`
       if (baseSalary > 0 && !cat.spouse) coverageAmount = String(Math.round(item.multiple * baseSalary))
+      // Persist the multiple itself so coverage can be re-derived as the
+      // salary changes, instead of freezing at import-time dollars.
+      if (!cat.spouse) salaryMultiple = String(item.multiple)
     }
     if (cat.key === 'criticalIllness' && item.coverage > 0) coverageAmount = String(item.coverage)
     if (cat.key === 'medical' && rx?.provider) notes.push(`includes ${rx.provider} prescription coverage`)
@@ -182,6 +185,7 @@ export function toAppEntities(items, { periodsPerYear = 12, baseSalary = 0, exis
       provider: item.provider || '',
       policyName,
       coverageAmount,
+      ...(salaryMultiple ? { salaryMultiple } : {}),
       premium: perMonth(item.cost),
       premiumFreq: 'month',
       notes: notes.join(' · '),
@@ -202,6 +206,7 @@ export function toAppEntities(items, { periodsPerYear = 12, baseSalary = 0, exis
       // and plan-design fields (deductible, OOP max…) exactly as entered.
       const patch = { premium: data.premium, premiumFreq: 'month' }
       if (data.coverageAmount) patch.coverageAmount = data.coverageAmount
+      if (salaryMultiple) patch.salaryMultiple = salaryMultiple
       ops.policies.push({ action: 'update', id: match.id, label: policyName, data: patch })
     } else {
       ops.policies.push({ action: 'add', label: policyName, data })
