@@ -198,9 +198,11 @@ export function getRecommendations(state) {
   // ---------- Insurance ----------
   const lifeCoverage = coverageOf(state, 'life')
   const someoneDependsOnIncome = dependents > 0 || (p.filingStatus === 'mfj' && num(p.spouseIncome) < income * 0.5)
-  if (income > 0 && someoneDependsOnIncome) {
-    // DIME: Debt + Income replacement (10x) + Mortgage + Education
-    const dime = num(p.otherDebt) + income * 10 + num(p.mortgageBalance) + num(p.educationNeeds)
+  // DIME: Debt + Income replacement (10x) + Mortgage + Education
+  const dime = income > 0 && someoneDependsOnIncome
+    ? num(p.otherDebt) + income * 10 + num(p.mortgageBalance) + num(p.educationNeeds)
+    : 0
+  if (dime > 0) {
     if (lifeCoverage < dime) {
       push('insurance', lifeCoverage === 0 ? 'critical' : 'warning',
         `Life insurance gap: ~$${Math.round((dime - lifeCoverage) / 1000) * 1000 >= 1000 ? ((dime - lifeCoverage) / 1000000).toFixed(2) + 'M' : (dime - lifeCoverage).toLocaleString()} short of estimated need`,
@@ -238,6 +240,90 @@ export function getRecommendations(state) {
       push('insurance', 'info', `${pol.type[0].toUpperCase() + pol.type.slice(1)} policy renews ${pol.renewalDate}`,
         `"${pol.policyName || pol.provider}" renews soon. Get 2–3 competing quotes before auto-renewal — loyalty is routinely penalized in insurance pricing, and re-shopping every 1–2 years typically saves 10–25%.`)
     }
+  }
+
+  // ---------- Insurance right-sizing ----------
+  // Insurance exists to transfer risks you can't absorb. Once savings can
+  // absorb a risk, premium dollars stop buying protection — so the advisor
+  // flags excess, not just gaps.
+  const annualPremiumOf = pol => {
+    const prem = num(pol.premium)
+    return pol.premiumFreq === 'month' ? prem * 12 : prem
+  }
+  const cashMonths = monthlyExpenses > 0 ? totals.cash / monthlyExpenses : 0
+
+  if (dime > 0 && lifeCoverage > dime * 1.5) {
+    const paidLife = state.insurance.filter(pl => pl.type === 'life' && annualPremiumOf(pl) > 0)
+    const paidPrem = Math.round(paidLife.reduce((s, pl) => s + annualPremiumOf(pl), 0))
+    push('insurance', 'info', `Possibly over-insured on life: $${(lifeCoverage / 1000000).toFixed(2)}M vs ~$${(dime / 1000000).toFixed(2)}M estimated need`,
+      `Your life coverage exceeds the DIME estimate by ~$${Math.round((lifeCoverage - dime) / 1000) * 1000 >= 1000000 ? ((lifeCoverage - dime) / 1000000).toFixed(2) + 'M' : Math.round(lifeCoverage - dime).toLocaleString()}. Coverage beyond what your family would actually need is premium spent on nothing${paidPrem > 0 ? ` — you're paying ~$${paidPrem.toLocaleString()}/yr on the policies you fund` : ''}. At the next open enrollment, consider trimming supplemental tiers first (employer basic coverage is usually free).`)
+  }
+
+  if (!someoneDependsOnIncome && lifeCoverage > 0) {
+    const paidPrem = Math.round(state.insurance.filter(pl => pl.type === 'life').reduce((s, pl) => s + annualPremiumOf(pl), 0))
+    if (paidPrem > 0) {
+      push('insurance', 'info', 'Paying for life insurance with no one depending on your income',
+        `Life insurance replaces income for people who rely on it. With no dependents on file, the ~$${paidPrem.toLocaleString()}/yr you spend on it likely does more good in savings. Keep free employer coverage; reconsider anything you pay for.`)
+    }
+  }
+
+  const addCoverage = coverageOf(state, 'ad&d')
+  if (addCoverage > 0 && dime > 0 && lifeCoverage < dime) {
+    push('insurance', 'warning', 'AD&D is not life insurance — and your life coverage has a gap',
+      `You carry $${addCoverage.toLocaleString()} of AD&D but only $${lifeCoverage.toLocaleString()} of life coverage against a ~$${(dime / 1000000).toFixed(2)}M DIME estimate. AD&D pays only for accidental death (~5–7% of deaths) — it can't close a life-insurance gap. Price level-term life for the difference; it's usually cheap at your age.`)
+  } else if (addCoverage > lifeCoverage && lifeCoverage > 0) {
+    push('insurance', 'info', 'More AD&D than life insurance',
+      `AD&D ($${addCoverage.toLocaleString()}) pays only on accidental death, so treat it as a lottery ticket, not protection. Your real family protection is the $${lifeCoverage.toLocaleString()} of life coverage — size that to your need and treat AD&D as a bonus.`)
+  }
+
+  const nichePolicies = state.insurance.filter(pl => ['critical illness', 'accident'].includes(pl.type) && annualPremiumOf(pl) > 0)
+  const nichePrem = Math.round(nichePolicies.reduce((s, pl) => s + annualPremiumOf(pl), 0))
+  if (nichePrem > 0 && cashMonths >= 4) {
+    const oopMaxes = state.insurance.filter(pl => pl.type === 'health' && num(pl.oopMax) > 0).map(pl => num(pl.oopMax))
+    const oopNote = oopMaxes.length ? ` and your health plan already caps a bad year at $${Math.min(...oopMaxes).toLocaleString()} out-of-pocket` : ''
+    push('insurance', 'info', `$${nichePrem.toLocaleString()}/yr on critical-illness/accident policies you can likely self-insure`,
+      `These products pay out a low share of premiums (state filings typically show ~50% or less, vs ~85%+ for major medical). With ${cashMonths.toFixed(1)} months of expenses in cash${oopNote}, your emergency fund already absorbs these risks. Worth dropping at the next open enrollment unless you have a specific known exposure.`)
+  }
+
+  for (const pol of state.insurance) {
+    if (pol.type === 'auto' && num(pol.deductible) > 0 && num(pol.deductible) <= 500 && cashMonths >= 3) {
+      push('insurance', 'info', `Low auto deductible ($${num(pol.deductible).toLocaleString()}) — you're paying to insure money you have`,
+        `With ${cashMonths.toFixed(1)} months of cash on hand, a $500 fender-bender isn't a financial emergency. Raising the deductible to $1,000–$2,500 typically cuts the premium 10–20%; ask for a quote at renewal. Same logic applies to home/renters deductibles.`)
+      break
+    }
+  }
+
+  const homeValue = num((state.home || {}).currentValue)
+  const homePolicies = state.insurance.filter(pl => pl.type === 'home' && num(pl.coverageAmount) > 0)
+  if (homeValue > 0 && homePolicies.length > 0) {
+    const homeCov = homePolicies.reduce((s, pl) => s + num(pl.coverageAmount), 0)
+    if (homeCov < homeValue * 0.5) {
+      push('insurance', 'warning', `Home dwelling coverage ($${homeCov.toLocaleString()}) looks low vs your home's value ($${homeValue.toLocaleString()})`,
+        `Dwelling coverage should track rebuild cost, not market value (land isn't rebuilt) — but a gap this large is worth a call to your insurer. Underinsured homes can trigger coinsurance penalties on partial claims. Ask for a replacement-cost estimate and inflation-guard endorsement.`)
+    } else if (homeCov > homeValue * 1.5) {
+      push('insurance', 'info', 'Home coverage well above the home\'s value',
+        `Dwelling coverage of $${homeCov.toLocaleString()} vs a $${homeValue.toLocaleString()} home — unless rebuild costs in your area genuinely run that high, you may be paying for coverage you can't use. Insurers only pay to rebuild; ask for a replacement-cost estimate at renewal.`)
+    }
+  }
+
+  const spouseIncome = num(p.spouseIncome)
+  if (p.filingStatus === 'mfj' && spouseIncome > 0 && dependents > 0) {
+    const spouseLifeCov = state.insurance
+      .filter(pl => pl.type === 'life' && /spouse|partner/i.test(pl.policyName || ''))
+      .reduce((s, pl) => s + num(pl.coverageAmount), 0)
+    const spouseNeed = spouseIncome * 5
+    if (spouseLifeCov < spouseNeed) {
+      push('insurance', 'info', 'Your spouse\'s life coverage looks thin',
+        `Employer spouse plans are usually ½–1× salary — against ~$${spouseIncome.toLocaleString()} of income your family also relies on, 5–10× is the usual guide (~$${spouseNeed.toLocaleString()}+). A level-term policy on a healthy adult is often $20–$50/mo. If your spouse mainly provides childcare, insure that too: replacing it costs real money.`)
+    }
+  }
+
+  const totalAnnualPremiums = Math.round(state.insurance.reduce((s, pl) => s + annualPremiumOf(pl), 0))
+  if (householdIncome > 0 && totalAnnualPremiums > householdIncome * 0.08) {
+    const top = [...state.insurance].sort((a, b) => annualPremiumOf(b) - annualPremiumOf(a)).slice(0, 3)
+      .map(pl => `${pl.policyName || pl.provider || pl.type} ($${Math.round(annualPremiumOf(pl)).toLocaleString()}/yr)`).join(', ')
+    push('insurance', 'info', `Insurance eats ${Math.round((totalAnnualPremiums / householdIncome) * 100)}% of household income ($${totalAnnualPremiums.toLocaleString()}/yr)`,
+      `Above ~8% is worth a deliberate review. Biggest lines: ${top}. Re-shop the shoppable ones (auto/home routinely price loyalty penalties), raise deductibles where cash reserves allow, and drop low-payout add-ons.`)
   }
 
   // Health-plan out-of-pocket accumulator — timing care around the OOP max
