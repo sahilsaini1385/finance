@@ -4,7 +4,7 @@ import { oopStatus } from '../lib/health.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
-const POLICY_TYPES = ['health', 'dental', 'vision', 'life', 'disability', 'auto', 'home', 'renters', 'umbrella', 'pet', 'other']
+const POLICY_TYPES = ['health', 'dental', 'vision', 'life', 'ad&d', 'accident', 'critical illness', 'disability', 'auto', 'home', 'renters', 'umbrella', 'pet', 'other']
 const FREQS = ['month', 'year']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
