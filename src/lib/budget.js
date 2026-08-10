@@ -12,6 +12,7 @@
 import { CATEGORIES } from './categorize.js'
 import { localMonth } from './dates.js'
 import { txParts } from './tx.js'
+import { paystubMonthlyNet } from './income.js'
 
 export const EXCLUDED = ['Income', 'Transfers', 'Investments']
 export const FIXED_CATS = ['Housing', 'Utilities', 'Insurance', 'Subscriptions', 'Fees']
@@ -133,6 +134,10 @@ export function paceProjection(spent, dayOfMonth, daysInMonth) {
 export function incomeBasis(state, month) {
   const target = num(state.budgetConfig?.incomeTarget)
   if (target > 0) return { value: target, basis: 'target' }
+  // Payroll-verified net pay from the Income tab beats guessing from
+  // transactions — it already has taxes and deductions out.
+  const stubNet = paystubMonthlyNet(state, month)
+  if (stubNet) return { value: stubNet.value, basis: 'net pay (Income tab)' }
   const months = new Set()
   const totals = {}
   for (const t of state.transactions) {

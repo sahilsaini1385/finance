@@ -164,6 +164,24 @@ export function paystubYearSummary(state, year) {
   }
 }
 
+// Usable (net) pay per month from parsed paystubs, for the budget's income
+// basis. Prefers the most recent COMPLETE month before `month` (a mid-month
+// sum would understate anyone paid more than once a month); falls back to
+// the newest stub month available.
+export function paystubMonthlyNet(state, month) {
+  const byMonth = {}
+  for (const s of state.paystubs || []) {
+    const m = (s.payDate || '').slice(0, 7)
+    if (!m || !(s.net > 0)) continue
+    byMonth[m] = Math.round((byMonth[m] || 0) + s.net)
+  }
+  const months = Object.keys(byMonth).sort()
+  if (months.length === 0) return null
+  const prior = months.filter(m => m < month)
+  const pick = prior.length ? prior[prior.length - 1] : months[months.length - 1]
+  return { value: byMonth[pick], month: pick }
+}
+
 // ---------- W-2 ----------
 
 const W2AMT = String.raw`(\d{1,3}(?:,?\d{3})*\.\d{2})`
