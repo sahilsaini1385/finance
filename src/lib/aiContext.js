@@ -5,7 +5,8 @@
 // this is the ONLY data that ever leaves the device, and only when the user
 // asks the AI a question.
 
-import { computeTotals, getRecommendations } from './advisor.js'
+import { computeTotals, getRecommendations, estimateFederalTax, TAX_BRACKETS_2026, LIMITS_2026 } from './advisor.js'
+import { buildTaxSummary } from './report.js'
 import { effectiveBudgets, monthActivity, computeSafeToSpend } from './budget.js'
 import { monthStats } from './report.js'
 import { detectRecurring } from './savings.js'
@@ -108,6 +109,51 @@ export function buildFinancialContext(state) {
   }
   const fi = projectFI(state, totals.investments)
   if (fi.ready && fi.fiAge) ctx.financialIndependence = { fiNumber: r0(fi.fiNumber), projectedAge: fi.fiAge }
+
+  // Tax picture — the raw material for proactive tax planning: household
+  // income, marginal bracket, contribution headroom vs this year's limits,
+  // and what deductible spending the app has actually seen.
+  const gross = r0(state.profile?.grossIncome) + r0(state.profile?.spouseIncome)
+  if (gross > 0) {
+    const filing = state.profile?.filingStatus || 'single'
+    const { tax, taxable } = estimateFederalTax(gross, filing)
+    const brackets = TAX_BRACKETS_2026[filing] || TAX_BRACKETS_2026.single
+    let marginal = brackets[0][1]
+    for (const [floor, rate] of brackets) if (taxable > floor) marginal = rate
+
+    const ts = buildTaxSummary(state, new Date().getFullYear(), LIMITS_2026)
+    const k401Planned = r0(state.profile?.grossIncome) * (r0(state.profile?.k401ContributionPct) / 100)
+    const hsaLimit =
+      state.profile?.hsaEligible === 'family' ? LIMITS_2026.hsaFamily
+      : state.profile?.hsaEligible === 'self' ? LIMITS_2026.hsaSelf : 0
+
+    ctx.tax = {
+      year: LIMITS_2026.year,
+      state: state.profile?.state || null,
+      filingStatus: filing,
+      dependents: state.profile?.dependents || '0',
+      householdGrossIncome: gross,
+      estFederalTax: tax,
+      marginalFedRatePct: Math.round(marginal * 100),
+      contributions: {
+        k401Planned: r0(Math.min(k401Planned, LIMITS_2026.k401)),
+        k401Limit: LIMITS_2026.k401,
+        hsaPlanned: r0(state.profile?.hsaContribution),
+        hsaLimit,
+        iraPlanned: r0(state.profile?.iraContribution),
+        iraLimit: LIMITS_2026.ira,
+      },
+      deductibleSpendingSeenThisYear: {
+        charitableGiving: r0(ts.deductions.giving),
+        medical: r0(ts.deductions.medical),
+        propertyTax: r0(ts.deductions.propertyTax),
+        mortgageInterestEst: r0(ts.deductions.mortgageInterestEst),
+      },
+      itemizableEst: r0(ts.itemizableEst),
+      standardDeduction: r0(ts.standardDeduction),
+      itemizeLikely: ts.itemizeLikely,
+    }
+  }
 
   return ctx
 }
