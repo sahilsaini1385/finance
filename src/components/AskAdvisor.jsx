@@ -6,10 +6,10 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
 const SUGGESTIONS = [
+  'Find every tax break we’re missing',
   'How is our budget looking this month?',
   'Where could we realistically cut spending?',
   'Are we on track for retirement?',
-  'Do we have the right amount of insurance?',
   'Should we pay extra on the mortgage or invest?',
 ]
 
@@ -124,9 +124,10 @@ export default function AskAdvisor() {
       <div className="card">
         <h2><span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances</h2>
         <p className="muted small">
-          Chat with a Claude model that can see your whole financial picture — budget, retirement outlook,
-          insurance, goals — and research current rates and rules on the web. Connect with your own Anthropic
-          credential; questions run on <strong>your</strong> plan, and your data is sent only when you ask.
+          Chat with a Claude model that can see your whole financial picture — budget, taxes, retirement outlook,
+          insurance, goals — hunt down tax breaks you're missing, and research current rates and rules on the web.
+          It sticks to money topics only. Connect with your own Anthropic credential; questions run on{' '}
+          <strong>your</strong> plan, and your data is sent only when you ask.
         </p>
         <ol className="how-to small">
           <li>
