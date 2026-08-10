@@ -2,8 +2,9 @@
 // live rendering and for the auto-archived month-end records.
 
 import { normalizeMerchant, detectRecurring } from './savings.js'
-import { effectiveBudgets, EXCLUDED } from './budget.js'
+import { effectiveBudgets, EXCLUDED, incomeBasis } from './budget.js'
 import { txParts } from './tx.js'
+import { resolveFacts } from './facts.js'
 
 export function shiftMonth(month, delta) {
   const d = new Date(month + '-02')
@@ -64,10 +65,12 @@ export function buildMonthlyReport(state, month) {
   const subsMonthly = recurring
     .filter(r => r.cadence === 'monthly' && r.medianAmount <= 100)
     .reduce((s, r) => s + r.monthlyCost, 0)
+  const basis = incomeBasis(state, month)
   return {
     month,
     generatedAt: new Date().toISOString(),
-    income: cur.income,
+    income: cur.income, // deposits observed in transactions (may differ from the planning basis below)
+    incomeBasis: { value: Math.round(basis.value), basis: basis.basis },
     spend: cur.spend,
     byCat: cur.byCat,
     topMerchants: Object.entries(cur.byMerchant).sort((a, b) => b[1] - a[1]).slice(0, 5),
@@ -151,7 +154,21 @@ export function buildYearReport(state, year) {
 
 const INT_DIV_RE = /dividend|interest|int pymt|int paid/i
 
+// Memoized per state object — this now runs inside getRecommendations (which
+// itself runs on most renders), and it makes 12 monthStats passes.
+const taxSummaryMemo = new WeakMap()
+
 export function buildTaxSummary(state, year, limits) {
+  const byYear = taxSummaryMemo.get(state)
+  const memoKey = `${year}|${limits?.standardDeduction?.single ?? ''}`
+  if (byYear?.has(memoKey)) return byYear.get(memoKey)
+  const out = buildTaxSummaryUncached(state, year, limits)
+  if (byYear) byYear.set(memoKey, out)
+  else taxSummaryMemo.set(state, new Map([[memoKey, out]]))
+  return out
+}
+
+function buildTaxSummaryUncached(state, year, limits) {
   const y = String(year)
   let incomeTotal = 0
   let intDiv = 0
@@ -168,9 +185,12 @@ export function buildTaxSummary(state, year, limits) {
   }
 
   const home = state.home || {}
+  // Reconciled mortgage balance (synced account > Home tab > profile) so the
+  // interest estimate here matches the advisor's itemize rec exactly.
+  const mortBalance = resolveFacts(state).facts.mortgageBalance?.value ?? num(home.mortgageBalance)
   const mortgageInterestEst =
-    num(home.mortgageBalance) > 0 && num(home.mortgageRate) > 0
-      ? Math.round(num(home.mortgageBalance) * (num(home.mortgageRate) / 100))
+    mortBalance > 0 && num(home.mortgageRate) > 0
+      ? Math.round(mortBalance * (num(home.mortgageRate) / 100))
       : 0
   const propertyTax = num(home.propertyTaxAnnual)
 

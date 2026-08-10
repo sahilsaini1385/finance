@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { oopStatus } from '../lib/health.js'
+import { policyPremiumAnnual } from '../lib/facts.js'
+import { localToday } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -47,12 +49,21 @@ export default function Insurance() {
   const submit = e => {
     e.preventDefault()
     if (!form.provider.trim() && !form.policyName.trim()) return
+    // Date-stamp the portal OOP figure whenever it changes — the tracker
+    // needs to know how old it is to warn when claims have likely processed.
+    const stamp = payload => {
+      const prev = editingId ? state.insurance.find(x => x.id === editingId) : null
+      if (payload.oopSpentManual !== '' && payload.oopSpentManual !== (prev?.oopSpentManual ?? '')) {
+        payload.oopSpentManualAsOf = localToday()
+      }
+      return payload
+    }
     if (editingId) {
-      dispatch({ type: 'UPDATE_INSURANCE', payload: { ...form, id: editingId } })
+      dispatch({ type: 'UPDATE_INSURANCE', payload: stamp({ ...form, id: editingId }) })
       setEditingId(null)
       toast('Policy updated', { kind: 'good' })
     } else {
-      dispatch({ type: 'ADD_INSURANCE', payload: { ...form, id: uid() } })
+      dispatch({ type: 'ADD_INSURANCE', payload: stamp({ ...form, id: uid() }) })
       toast('Policy added', { kind: 'good' })
     }
     setForm(blank)
@@ -188,6 +199,25 @@ export default function Insurance() {
         </form>
       )}
 
+      {(() => {
+        // Premiums drift after open enrollment — payroll carries the truth
+        // every pay period, while imported policy figures are a snapshot.
+        const drifted = state.insurance
+          .map(p => ({ p, prem: policyPremiumAnnual(state, p) }))
+          .filter(x => x.prem?.drifted)
+        if (drifted.length === 0) return null
+        return (
+          <div className="alert warning">
+            <span className="alert-icon"><Icon name="alert-triangle" size={15} /></span>
+            <div>
+              <strong>Premiums changed in payroll:</strong>{' '}
+              {drifted.map(({ p, prem }) => `${p.provider || p.type} (policy says ${fmt(prem.declared)}/yr, payroll implies ${fmt(prem.value)}/yr)`).join(' · ')}
+              {' '}— re-import your benefits statement or edit the policy. Advice uses the payroll figure meanwhile.
+            </div>
+          </div>
+        )
+      })()}
+
       {state.insurance.filter(p => p.type === 'health').map(p => {
         const s = oopStatus(state, p)
         if (!s) return null
@@ -215,10 +245,16 @@ export default function Insurance() {
             )}
             <p className="small muted">
               {s.manual
-                ? 'Using the figure you entered from your insurer’s portal — update it there as claims process.'
+                ? `Using the figure you entered from your insurer’s portal${s.manualAsOf ? ` on ${s.manualAsOf}` : ''} — update it there as claims process.`
                 : 'Estimated from Health-category spending this plan year. Copays and bills paid by card land here automatically; for the exact accumulator, enter “OOP paid so far” from your insurer’s portal on this policy.'}
               {parseFloat(p.oopMaxIndividual) > 0 && ` No single family member pays more than ${fmt(p.oopMaxIndividual)} (embedded individual max).`}
             </p>
+            {s.staleManual && (
+              <p className="small money" style={{ color: 'var(--warning)', marginBottom: 0 }}>
+                Health spending since ({fmt(s.auto)}) has pulled well ahead of your{s.manualAsOf ? ` ${s.manualAsOf}` : ''} portal figure ({fmt(s.spent)}) —
+                claims may have processed. Check the portal and update the figure.
+              </p>
+            )}
           </div>
         )
       })}

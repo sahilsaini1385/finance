@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { parsePaystub, paystubYearSummary, K401_TRAD_RE, K401_AFTER_RE, K401_ROTH_RE } from '../lib/income.js'
+import { resolveFacts, getDataConflicts } from '../lib/facts.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
 import { LIMITS_2026 } from '../lib/advisor.js'
 import FileDrop from './FileDrop.jsx'
@@ -128,6 +129,23 @@ export default function Income() {
                   ? `Current pace projects ~${fmt(Math.round(paceInfo.projected))} by year end — ${fmt(Math.round(k401Limit - paceInfo.projected))} of tax-advantaged space would go unused.`
                   : ''}
           </p>
+          {(() => {
+            const { facts } = resolveFacts(state)
+            const gi = facts.grossIncome
+            const lines = []
+            if (gi?.source?.origin === 'payroll') {
+              lines.push(
+                <p key="ann" className="small muted money" style={{ marginBottom: 0 }}>
+                  Annualized income: <strong>~{fmt(gi.value)}/yr</strong> ({gi.source.detail}) — RSU vests count as
+                  actuals, never extrapolated.
+                </p>,
+              )
+            }
+            for (const c of getDataConflicts(state).filter(c => (c.surfaces || []).includes('income'))) {
+              lines.push(<p key={c.message} className="small money" style={{ color: 'var(--warning)', marginBottom: 0 }}>{c.message}</p>)
+            }
+            return lines
+          })()}
         </div>
       )}
 

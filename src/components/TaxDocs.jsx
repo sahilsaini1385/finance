@@ -107,7 +107,7 @@ export default function TaxDocs() {
   }
 
   const w2 = w2Summary(state)
-  const est = w2 && w2.wages > 0 ? estimateFederalTax(w2.wages, state.profile.filingStatus) : null
+  const est = w2 && w2.wages > 0 ? estimateFederalTax(w2.wages, state.profile.filingStatus, Number(w2.year)) : null
   const diff = est ? Math.round(w2.fedWithholding - est.tax) : 0
 
   return (

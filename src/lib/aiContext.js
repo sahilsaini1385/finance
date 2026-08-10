@@ -6,6 +6,8 @@
 // asks the AI a question.
 
 import { computeTotals, getRecommendations, estimateFederalTax, TAX_BRACKETS_2026, LIMITS_2026 } from './advisor.js'
+import { resolveFacts } from './facts.js'
+import { marginalRate } from './taxTables.js'
 import { buildTaxSummary } from './report.js'
 import { effectiveBudgets, monthActivity, computeSafeToSpend } from './budget.js'
 import { monthStats } from './report.js'
@@ -76,12 +78,15 @@ export function buildFinancialContext(state) {
       const s = paystubYearSummary(state, localMonth().slice(0, 4))
       if (!s) return undefined
       return {
-        source: 'parsed pay statements (verified)',
+        source: s.latest.balanced
+          ? 'parsed pay statements (verified — reconciles to the penny)'
+          : 'parsed pay statements (UNVERIFIED — statement did not fully reconcile, treat as approximate)',
         employer: s.employer,
-        latest: { payDate: s.latest.payDate, gross: r0(s.latest.gross), net: r0(s.latest.net), fedTaxable: r0(s.latest.fedTaxable) },
+        latest: { payDate: s.latest.payDate, gross: r0(s.latest.gross), net: r0(s.latest.net), fedTaxablePerPeriod: r0(s.latest.fedTaxable) },
         ytd: {
           gross: r0(s.ytd.gross), federalTax: r0(s.ytd.federalTax), allTaxes: r0(s.ytd.allTaxes),
           k401Trad: r0(s.ytd.k401Trad), k401Roth: r0(s.ytd.k401Roth), k401AfterTax: r0(s.ytd.k401AfterTax),
+          hsa: r0(s.ytd.hsa), rsuVested: r0(s.ytd.rsuVested),
           pretaxBenefits: r0(s.ytd.pretaxBenefits),
         },
       }
@@ -147,22 +152,30 @@ export function buildFinancialContext(state) {
   const fi = projectFI(state, totals.investments)
   if (fi.ready && fi.fiAge) ctx.financialIndependence = { fiNumber: r0(fi.fiNumber), projectedAge: fi.fiAge }
 
-  // Tax picture — the raw material for proactive tax planning: household
-  // income, marginal bracket, contribution headroom vs this year's limits,
-  // and what deductible spending the app has actually seen.
-  const gross = r0(state.profile?.grossIncome) + r0(state.profile?.spouseIncome)
+  // Tax picture — reconciled: payroll-verified income and deferrals when pay
+  // statements exist, profile estimates otherwise, each labeled with its
+  // source so the model never averages disagreeing numbers.
+  const { facts, conflicts } = resolveFacts(state)
+  const myIncome = facts.grossIncome?.value || r0(state.profile?.grossIncome)
+  const gross = r0(myIncome) + r0(state.profile?.spouseIncome)
   if (gross > 0) {
     const filing = state.profile?.filingStatus || 'single'
-    const { tax, taxable } = estimateFederalTax(gross, filing)
-    const brackets = TAX_BRACKETS_2026[filing] || TAX_BRACKETS_2026.single
-    let marginal = brackets[0][1]
-    for (const [floor, rate] of brackets) if (taxable > floor) marginal = rate
+    // Marginal rate on the reconciled taxable pace when payroll exists — but
+    // payroll only covers ONE earner; with spouse income in the household,
+    // estimate on household gross so the bracket isn't understated.
+    const spouse = r0(state.profile?.spouseIncome)
+    const usePayrollTax = facts.withholding && spouse === 0
+    const taxableBase = usePayrollTax ? facts.withholding.taxableAnnual : estimateFederalTax(gross, filing).taxable
+    const estTax = usePayrollTax ? facts.withholding.estAnnualTax : estimateFederalTax(gross, filing).tax
+    const marginal = marginalRate(taxableBase, filing, LIMITS_2026.year)
 
     const ts = buildTaxSummary(state, new Date().getFullYear(), LIMITS_2026)
-    const k401Planned = r0(state.profile?.grossIncome) * (r0(state.profile?.k401ContributionPct) / 100)
+    const payrollK401 = facts.k401Deferrals?.source?.origin === 'payroll'
+    const hsaElig = facts.hsaStatus?.eligibility
     const hsaLimit =
-      state.profile?.hsaEligible === 'family' ? LIMITS_2026.hsaFamily
-      : state.profile?.hsaEligible === 'self' ? LIMITS_2026.hsaSelf : 0
+      hsaElig === 'family' ? LIMITS_2026.hsaFamily
+      : hsaElig === 'self' ? LIMITS_2026.hsaSelf
+      : hsaElig === 'no' ? 0 : null // null = unknown eligibility, don't assume
 
     ctx.tax = {
       year: LIMITS_2026.year,
@@ -170,12 +183,19 @@ export function buildFinancialContext(state) {
       filingStatus: filing,
       dependents: state.profile?.dependents || '0',
       householdGrossIncome: gross,
-      estFederalTax: tax,
+      incomeSource: facts.grossIncome?.source?.label || 'your estimate',
+      estFederalTax: r0(estTax),
       marginalFedRatePct: Math.round(marginal * 100),
       contributions: {
-        k401Planned: r0(Math.min(k401Planned, LIMITS_2026.k401)),
+        // Payroll-verified YTD + pace replaces the modeled "planned" figure
+        // when statements exist (the raw profile % stays in ctx.profile).
+        ...(payrollK401
+          ? { k401Ytd: r0(facts.k401Deferrals.value), k401PaceAnnual: r0(facts.k401Deferrals.pace), k401Source: 'payroll-verified' }
+          : { k401Planned: r0(Math.min((facts.k401Deferrals?.value || 0), LIMITS_2026.k401)), k401Source: 'modeled from profile %' }),
         k401Limit: LIMITS_2026.k401,
-        hsaPlanned: r0(state.profile?.hsaContribution),
+        k401AfterTaxYtd: facts.k401AfterTax ? r0(facts.k401AfterTax.value) : undefined,
+        hsaPlanned: r0(facts.hsaStatus?.contribution?.value ?? state.profile?.hsaContribution),
+        hsaEligibility: hsaElig,
         hsaLimit,
         iraPlanned: r0(state.profile?.iraContribution),
         iraLimit: LIMITS_2026.ira,
@@ -190,6 +210,11 @@ export function buildFinancialContext(state) {
       standardDeduction: r0(ts.standardDeduction),
       itemizeLikely: ts.itemizeLikely,
     }
+  }
+
+  // Cross-section disagreements the app has detected — surface, never average.
+  if (conflicts.length > 0) {
+    ctx.dataConflicts = conflicts.slice(0, 6).map(c => c.message)
   }
 
   return ctx

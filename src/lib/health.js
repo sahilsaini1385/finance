@@ -50,11 +50,28 @@ export function oopStatus(state, policy, todayStr = localToday()) {
   const manual = manualRaw !== '' && manualRaw != null && Number.isFinite(parseFloat(manualRaw))
   const spent = manual ? Math.max(0, num(manualRaw)) : auto
   const deductible = num(policy?.deductible)
+
+  // Staleness tripwire: the portal figure is authoritative but ages — when
+  // transaction-observed spending pulls well ahead of an old manual figure,
+  // claims have probably processed since it was recorded.
+  const manualAsOf = policy?.oopSpentManualAsOf || null
+  let staleManual = false
+  if (manual) {
+    const ageDays = manualAsOf
+      ? Math.round((new Date(todayStr + 'T00:00') - new Date(manualAsOf + 'T00:00')) / 86400000)
+      : Infinity
+    const aheadBy = auto - spent
+    staleManual = ageDays > 90 && aheadBy > Math.max(250, spent * 0.15)
+  }
+
   return {
     planYearStart: start,
     oopMax,
     spent,
+    auto,
     manual,
+    manualAsOf,
+    staleManual,
     remaining: Math.max(0, oopMax - spent),
     pct: Math.min(1, spent / oopMax),
     metOopMax: spent >= oopMax,

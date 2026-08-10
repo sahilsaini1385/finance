@@ -2,6 +2,8 @@
 // real (inflation-adjusted) growth on today's dollars, the 4% rule for the
 // target, contributions held constant. Educational, not a plan.
 
+import { resolveFacts } from './facts.js'
+
 const num = v => {
   const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
   return Number.isNaN(n) ? 0 : n
@@ -16,9 +18,9 @@ export const FI_ASSUMPTIONS = {
 // state → {ready, missing[]} | {fiNumber, portfolio, annualContrib, fiAge, years, series}
 export function projectFI(state, investmentsTotal) {
   const p = state.profile
+  const { facts } = resolveFacts(state)
   const age = num(p.age)
-  const monthlyExpenses = num(p.monthlyExpenses)
-  const income = num(p.grossIncome)
+  const monthlyExpenses = facts.monthlyExpenses?.value || num(p.monthlyExpenses)
 
   const missing = []
   if (!age) missing.push('age')
@@ -28,9 +30,9 @@ export function projectFI(state, investmentsTotal) {
   const annualExpenses = monthlyExpenses * 12
   const fiNumber = annualExpenses / FI_ASSUMPTIONS.withdrawalRate
 
-  const k401 = income * (num(p.k401ContributionPct) / 100)
-  const match = income * (Math.min(num(p.employerMatchPct), num(p.k401ContributionPct)) / 100)
-  const annualContrib = k401 + match + num(p.iraContribution) + num(p.hsaContribution)
+  // Reconciled savings bundle — payroll-verified pace (incl. after-tax
+  // 401(k)) when pay statements exist, modeled from profile otherwise.
+  const annualContrib = facts.annualContrib?.value ?? 0
 
   let portfolio = investmentsTotal
   const series = [{ age, value: portfolio }]

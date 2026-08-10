@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { parseBenefitsStatement, toAppEntities } from '../lib/benefitsImport.js'
+import { payFrequencyFromStubs, paystubYearSummary } from '../lib/income.js'
 import { extractPdfText } from '../lib/extract.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -38,7 +39,10 @@ const PAY_FREQS = [
 // statement (Amazon A-to-Z format) into insurance policies + benefit rows.
 function StatementImport({ state, dispatch, toast, onClose }) {
   const [text, setText] = useState('')
-  const [freq, setFreq] = useState('12')
+  // Pay frequency pre-filled from parsed pay statements when we have them —
+  // a wrong frequency silently corrupts every per-pay-period conversion.
+  const stubFreq = payFrequencyFromStubs(state.paystubs)
+  const [freq, setFreq] = useState(String(stubFreq || 12))
   const [baseSalary, setBaseSalary] = useState('')
   const [reading, setReading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -121,6 +125,11 @@ function StatementImport({ state, dispatch, toast, onClose }) {
           <select value={freq} onChange={e => setFreq(e.target.value)}>
             {PAY_FREQS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          {stubFreq && String(stubFreq) !== freq && (
+            <span className="small" style={{ color: 'var(--warning)' }}>
+              Your pay statements look {PAY_FREQS.find(([v]) => v === String(stubFreq))?.[1]?.toLowerCase()} — this setting disagrees.
+            </span>
+          )}
         </label>
         <label>Annual base salary (optional)
           <span className="input-money">
@@ -203,7 +212,21 @@ export default function Benefits() {
     toast('Benefit deleted')
   }
 
-  const totalValue = state.benefits.reduce((s, b) => s + (parseFloat(b.annualValue) || 0), 0)
+  // RSU/after-tax-401(k) rows duplicate what payroll already tracks — keep
+  // the rows visible but exclude them from the total to avoid double-counting
+  // compensation the paystubs count as actuals.
+  const stubSummary = paystubYearSummary(state, String(new Date().getFullYear()))
+  const RSU_RE = /rsu|equity/i
+  const AFTERTAX_RE = /mega.?backdoor|after.?tax.{0,8}401/i
+  // Per-category match: an RSU row is only a duplicate when payroll actually
+  // shows RSU vests, an after-tax row only when payroll shows after-tax —
+  // never cross-excluded on unrelated payroll evidence.
+  const isPayrollDup = b => Boolean(stubSummary) && (
+    ((RSU_RE.test(b.name || '') || b.type === 'RSU / equity') && stubSummary.ytd.rsuVested > 0) ||
+    (AFTERTAX_RE.test(b.name || '') && stubSummary.ytd.k401AfterTax > 0)
+  )
+  const dupRows = state.benefits.filter(isPayrollDup)
+  const totalValue = state.benefits.filter(b => !isPayrollDup(b)).reduce((s, b) => s + (parseFloat(b.annualValue) || 0), 0)
   const notEnrolled = state.benefits.filter(b => b.enrolled === 'no')
 
   return (
@@ -213,6 +236,9 @@ export default function Benefits() {
           <h1>Benefits</h1>
           <p className="muted small money">
             Estimated annual value on record: <strong>{fmt(totalValue)}</strong>
+            {dupRows.length > 0 && (
+              <span> · {dupRows.length} equity/after-tax row{dupRows.length > 1 ? 's' : ''} excluded — tracked from your paystubs instead</span>
+            )}
           </p>
         </div>
         <div className="row gap">
