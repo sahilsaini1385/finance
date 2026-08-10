@@ -1,14 +1,38 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
+import { oopStatus } from '../lib/health.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
 const POLICY_TYPES = ['health', 'dental', 'vision', 'life', 'disability', 'auto', 'home', 'renters', 'umbrella', 'pet', 'other']
 const FREQS = ['month', 'year']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 const blank = {
   type: 'health', provider: '', policyName: '', coverageAmount: '',
   premium: '', premiumFreq: 'month', deductible: '', renewalDate: '', notes: '',
+  // Health-plan design (shown only for type: health)
+  oopMax: '', oopMaxIndividual: '', oonDeductible: '', oonOopMax: '',
+  planYearStartMonth: '1', oopSpentManual: '',
+}
+
+// One-click prefills for common plan designs. Values come from the plan's
+// official summary — always double-check against the current year's SPD.
+const HEALTH_TEMPLATES = [
+  {
+    label: 'Amazon Premium Plan (Aetna) — family',
+    fields: {
+      type: 'health', provider: 'Aetna', policyName: 'Amazon Premium Plan — Employee + Family',
+      deductible: '0', oopMax: '7500', oopMaxIndividual: '2500',
+      oonDeductible: '3000', oonOopMax: '15000', planYearStartMonth: '1',
+      notes: 'In-network: no deductible. Copays: PCP $30 · specialist $60 · urgent care $60 · ER $300 · labs $30 · x-ray $60 · complex imaging $90/test · inpatient $1,000/admission · ambulance $300/trip. Acupuncture/massage $60 (18 visits/yr combined). Out-of-network: 30% coinsurance after deductible. Preventive care 100%. Plan year = calendar year.',
+    },
+  },
+]
+
+function nextJanFirst() {
+  const now = new Date()
+  return `${now.getFullYear() + 1}-01-01`
 }
 
 export default function Insurance() {
@@ -109,6 +133,51 @@ export default function Insurance() {
           <label>Renewal date
             <input type="date" value={form.renewalDate} onChange={e => set('renewalDate', e.target.value)} />
           </label>
+          {form.type === 'health' && (
+            <>
+              <div className="span-2">
+                <div className="row gap" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span className="small muted">Health plan details — deductible above is <strong>in-network</strong> (enter 0 if your plan has none). Prefill:</span>
+                  {HEALTH_TEMPLATES.map(t => (
+                    <button key={t.label} type="button" className="btn ghost small"
+                      onClick={() => setForm(f => ({ ...f, ...t.fields, renewalDate: f.renewalDate || nextJanFirst() }))}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label>OOP max (in-network, your tier)
+                <span className="input-money">
+                  <input type="number" step="1" inputMode="decimal" value={form.oopMax} onChange={e => set('oopMax', e.target.value)} placeholder="7500" />
+                </span>
+              </label>
+              <label>OOP max (per person, embedded)
+                <span className="input-money">
+                  <input type="number" step="1" inputMode="decimal" value={form.oopMaxIndividual} onChange={e => set('oopMaxIndividual', e.target.value)} placeholder="2500" />
+                </span>
+              </label>
+              <label>Out-of-network deductible
+                <span className="input-money">
+                  <input type="number" step="1" inputMode="decimal" value={form.oonDeductible} onChange={e => set('oonDeductible', e.target.value)} />
+                </span>
+              </label>
+              <label>Out-of-network OOP max
+                <span className="input-money">
+                  <input type="number" step="1" inputMode="decimal" value={form.oonOopMax} onChange={e => set('oonOopMax', e.target.value)} />
+                </span>
+              </label>
+              <label>Plan year starts
+                <select value={form.planYearStartMonth} onChange={e => set('planYearStartMonth', e.target.value)}>
+                  {MONTHS.map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
+                </select>
+              </label>
+              <label>OOP paid so far (from insurer portal)
+                <span className="input-money">
+                  <input type="number" step="0.01" inputMode="decimal" value={form.oopSpentManual} onChange={e => set('oopSpentManual', e.target.value)} placeholder="blank = auto-track" />
+                </span>
+              </label>
+            </>
+          )}
           <label className="span-2">Notes
             <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. through employer, includes spouse" />
           </label>
@@ -118,6 +187,41 @@ export default function Insurance() {
           </div>
         </form>
       )}
+
+      {state.insurance.filter(p => p.type === 'health').map(p => {
+        const s = oopStatus(state, p)
+        if (!s) return null
+        const startLabel = new Date(s.planYearStart + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        return (
+          <div className="card" key={`oop-${p.id}`}>
+            <h2>{p.provider || 'Health plan'} — out-of-pocket progress</h2>
+            <p className="small muted money" style={{ marginTop: 2 }}>
+              <strong>{fmt(s.spent)}</strong> of {fmt(s.oopMax)} in-network out-of-pocket max
+              {s.metOopMax
+                ? ' — max reached: covered care is 100% paid for the rest of this plan year.'
+                : ` · ${fmt(s.remaining)} to go`}
+              {' '}· plan year since {startLabel}
+            </p>
+            <div className="meter" style={{ marginTop: 8 }}>
+              <div
+                className="meter-fill"
+                style={{ width: `${Math.round(s.pct * 100)}%`, background: s.metOopMax ? 'var(--good)' : 'var(--accent)' }}
+              />
+            </div>
+            {s.deductible > 0 && (
+              <p className="small muted money">
+                Deductible: {s.deductibleMet ? 'met' : `${fmt(Math.min(s.spent, s.deductible))} of ${fmt(s.deductible)}`}
+              </p>
+            )}
+            <p className="small muted">
+              {s.manual
+                ? 'Using the figure you entered from your insurer’s portal — update it there as claims process.'
+                : 'Estimated from Health-category spending this plan year. Copays and bills paid by card land here automatically; for the exact accumulator, enter “OOP paid so far” from your insurer’s portal on this policy.'}
+              {parseFloat(p.oopMaxIndividual) > 0 && ` No single family member pays more than ${fmt(p.oopMaxIndividual)} (embedded individual max).`}
+            </p>
+          </div>
+        )
+      })}
 
       {state.insurance.length === 0 && !showForm ? (
         <div className="card">
@@ -145,7 +249,7 @@ export default function Insurance() {
                   <td className="num">{fmt(p.deductible)}</td>
                   <td className="small">{p.renewalDate || '—'}</td>
                   <td className="row-actions">
-                    <button className="btn ghost small" onClick={() => { setEditingId(p.id); setShowForm(true); setForm({ type: p.type, provider: p.provider, policyName: p.policyName, coverageAmount: p.coverageAmount, premium: p.premium, premiumFreq: p.premiumFreq, deductible: p.deductible, renewalDate: p.renewalDate, notes: p.notes }) }}>Edit</button>
+                    <button className="btn ghost small" onClick={() => { setEditingId(p.id); setShowForm(true); const { id: _id, ...rest } = p; setForm({ ...blank, ...rest }) }}>Edit</button>
                     <button className={armedId === p.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(p)}>
                       {armedId === p.id ? 'Confirm?' : 'Delete'}
                     </button>

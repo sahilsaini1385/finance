@@ -3,6 +3,7 @@
 
 import { localToday, localMonth } from './dates.js'
 import { txParts } from './tx.js'
+import { oopStatus } from './health.js'
 
 export const LIMITS_2026 = {
   year: 2026,
@@ -236,6 +237,23 @@ export function getRecommendations(state) {
     if (pol.renewalDate && pol.renewalDate >= today && pol.renewalDate <= soonStr) {
       push('insurance', 'info', `${pol.type[0].toUpperCase() + pol.type.slice(1)} policy renews ${pol.renewalDate}`,
         `"${pol.policyName || pol.provider}" renews soon. Get 2–3 competing quotes before auto-renewal — loyalty is routinely penalized in insurance pricing, and re-shopping every 1–2 years typically saves 10–25%.`)
+    }
+  }
+
+  // Health-plan out-of-pocket accumulator — timing care around the OOP max
+  // is one of the few levers a family has on medical costs.
+  for (const pol of state.insurance) {
+    if (pol.type !== 'health') continue
+    const oop = oopStatus(state, pol)
+    if (!oop) continue
+    const [py, pm, pd2] = oop.planYearStart.split('-').map(Number)
+    const resetDate = `${py + 1}-${String(pm).padStart(2, '0')}-${String(pd2).padStart(2, '0')}`
+    if (oop.metOopMax) {
+      push('insurance', 'info', 'Out-of-pocket max reached — covered care is 100% paid until the plan year resets',
+        `You've hit the $${oop.oopMax.toLocaleString()} in-network out-of-pocket max on "${pol.policyName || pol.provider}". Every in-network covered service is free until ${resetDate}. If anyone in the family has been putting off a procedure, imaging, PT, or a specialist visit, schedule it before the reset.`)
+    } else if (oop.pct >= 0.75) {
+      push('insurance', 'info', `${Math.round(oop.pct * 100)}% of the way to your out-of-pocket max`,
+        `$${Math.round(oop.spent).toLocaleString()} of the $${oop.oopMax.toLocaleString()} in-network max on "${pol.policyName || pol.provider}" — $${Math.round(oop.remaining).toLocaleString()} to go before the ${resetDate} reset. If more care is coming this plan year, once you cross the max the rest is fully covered — worth weighing when scheduling elective care.`)
     }
   }
 

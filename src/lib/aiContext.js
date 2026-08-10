@@ -12,6 +12,7 @@ import { monthStats } from './report.js'
 import { detectRecurring } from './savings.js'
 import { retirementParams, deterministicProjection, monteCarloRetirement } from './retirement.js'
 import { localMonth } from './dates.js'
+import { oopStatus } from './health.js'
 import { projectFI } from './projection.js'
 
 const r0 = n => Math.round(Number(n) || 0)
@@ -67,10 +68,28 @@ export function buildFinancialContext(state) {
     },
     lastMonth: { income: r0(prev.income), spend: r0(prev.spend) },
     recurringBills: bills,
-    insurance: (state.insurance || []).map(p => ({
-      type: p.type, provider: p.provider, coverage: r0(p.coverageAmount),
-      premium: r0(p.premium), per: p.premiumFreq, renews: p.renewalDate || null,
-    })),
+    insurance: (state.insurance || []).map(p => {
+      const base = {
+        type: p.type, provider: p.provider, coverage: r0(p.coverageAmount),
+        premium: r0(p.premium), per: p.premiumFreq, renews: p.renewalDate || null,
+      }
+      if (p.type === 'health') {
+        const oop = oopStatus(state, p)
+        if (oop) {
+          base.healthPlan = {
+            inNetworkDeductible: r0(p.deductible),
+            oopMax: r0(oop.oopMax),
+            oopMaxPerPerson: r0(p.oopMaxIndividual) || undefined,
+            oopSpentThisPlanYear: r0(oop.spent),
+            oopSource: oop.manual ? 'insurer portal' : 'estimated from Health spending',
+            planYearStart: oop.planYearStart,
+            oonDeductible: r0(p.oonDeductible) || undefined,
+            oonOopMax: r0(p.oonOopMax) || undefined,
+          }
+        }
+      }
+      return base
+    }),
     goals: (state.goals || []).map(g => ({
       name: g.name, target: r0(g.target), targetDate: g.targetDate || null,
       saved: r0((state.accounts || []).filter(a => (g.accountIds || []).includes(a.id))
