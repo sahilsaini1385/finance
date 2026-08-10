@@ -20,6 +20,46 @@ function blobToArrayBuffer(blob) {
   })
 }
 
+// Layout-preserving extraction: rebuild visual rows from glyph coordinates
+// (group by y, sort by x) the way `pdftotext -layout` does. Column-heavy
+// documents — paystubs, W-2s — scramble badly in reading-order extraction
+// (a label's numbers land next to the wrong label); row reconstruction keeps
+// each label and its amounts on one line.
+export async function extractPdfTextLayout(blob) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js')
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+  const task = pdfjs.getDocument({ data: await blobToArrayBuffer(blob) })
+  const doc = await task.promise
+  let text = ''
+  const pages = Math.min(doc.numPages, 20)
+  for (let p = 1; p <= pages; p++) {
+    const page = await doc.getPage(p)
+    const content = await page.getTextContent()
+    const rows = []
+    for (const it of content.items) {
+      if (!it.str || !it.str.trim()) continue
+      const x = it.transform[4]
+      const y = it.transform[5]
+      let row = rows.find(r => Math.abs(r.y - y) < 3)
+      if (!row) {
+        row = { y, items: [] }
+        rows.push(row)
+      }
+      row.items.push({ x, str: it.str })
+    }
+    rows.sort((a, b) => b.y - a.y)
+    for (const r of rows) {
+      r.items.sort((a, b) => a.x - b.x)
+      text += r.items.map(i => i.str).join(' ') + '\n'
+    }
+    text += '\n'
+  }
+  try {
+    if (typeof task.destroy === 'function') await task.destroy()
+  } catch { /* cleanup is best-effort */ }
+  return text
+}
+
 export async function extractPdfText(blob) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js')
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl

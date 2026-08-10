@@ -13,6 +13,7 @@ import { detectRecurring } from './savings.js'
 import { retirementParams, deterministicProjection, monteCarloRetirement } from './retirement.js'
 import { localMonth } from './dates.js'
 import { oopStatus } from './health.js'
+import { paystubYearSummary } from './income.js'
 import { projectFI } from './projection.js'
 
 const r0 = n => Math.round(Number(n) || 0)
@@ -71,6 +72,20 @@ export function buildFinancialContext(state) {
     workBenefits: (state.benefits || []).map(b => ({
       name: b.name, type: b.type, annualValue: r0(b.annualValue), enrolled: b.enrolled !== 'no',
     })),
+    payroll: (() => {
+      const s = paystubYearSummary(state, localMonth().slice(0, 4))
+      if (!s) return undefined
+      return {
+        source: 'parsed pay statements (verified)',
+        employer: s.employer,
+        latest: { payDate: s.latest.payDate, gross: r0(s.latest.gross), net: r0(s.latest.net), fedTaxable: r0(s.latest.fedTaxable) },
+        ytd: {
+          gross: r0(s.ytd.gross), federalTax: r0(s.ytd.federalTax), allTaxes: r0(s.ytd.allTaxes),
+          k401Trad: r0(s.ytd.k401Trad), k401Roth: r0(s.ytd.k401Roth), k401AfterTax: r0(s.ytd.k401AfterTax),
+          pretaxBenefits: r0(s.ytd.pretaxBenefits),
+        },
+      }
+    })(),
     insurance: (state.insurance || []).map(p => {
       const base = {
         type: p.type, provider: p.provider, coverage: r0(p.coverageAmount),

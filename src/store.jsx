@@ -10,6 +10,7 @@ export const initialState = {
   accounts: [],      // {id, name, institution, type, balance, updated}
   transactions: [],  // {id, accountId, date, description, amount, category, source, hash}
   benefits: [],      // {id, name, type, provider, annualValue, notes, enrolled}
+  paystubs: [],      // parsed pay statements: {id, employer, payDate, gross, net, taxes[], deductions[], …}
   connections: {
     simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
     claude: null,    // {token, model} — AI advisor credential (stays in this browser)
@@ -131,6 +132,14 @@ function reducer(state, action) {
       return { ...state, benefits: state.benefits.map(b => (b.id === action.payload.id ? { ...b, ...action.payload } : b)) }
     case 'DELETE_BENEFIT':
       return { ...state, benefits: state.benefits.filter(b => b.id !== action.payload) }
+    case 'ADD_PAYSTUB': {
+      // Same statement re-uploaded (same employer + pay date) replaces the old parse.
+      const dup = state.paystubs.find(s => s.payDate === action.payload.payDate && s.employer === action.payload.employer)
+      const rest = dup ? state.paystubs.filter(s => s.id !== dup.id) : state.paystubs
+      return { ...state, paystubs: [...rest, action.payload].sort((a, b) => (a.payDate < b.payDate ? -1 : 1)) }
+    }
+    case 'DELETE_PAYSTUB':
+      return { ...state, paystubs: state.paystubs.filter(s => s.id !== action.payload) }
     case 'ADD_INSURANCE':
       return { ...state, insurance: [...state.insurance, action.payload] }
     case 'UPDATE_INSURANCE':
