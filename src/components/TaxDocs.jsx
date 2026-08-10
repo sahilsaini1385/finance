@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { estimateFederalTax, w2Summary, LIMITS_2026 } from '../lib/advisor.js'
-import { putFile, deleteFile, openFile, formatBytes } from '../lib/files.js'
+import { parseW2 } from '../lib/income.js'
+import { extractPdfTextLayout } from '../lib/extract.js'
+import { putFile, deleteFile, openFile, getFile, formatBytes } from '../lib/files.js'
 import FileDrop from './FileDrop.jsx'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -30,6 +32,26 @@ export default function TaxDocs() {
     .filter(d => d.section === 'tax')
     .sort((a, b) => (a.year === b.year ? (a.uploadedAt < b.uploadedAt ? 1 : -1) : a.year < b.year ? 1 : -1))
 
+  // Read a W-2 PDF's box figures in-browser. Returns {fields, year} or null.
+  const readW2 = async blob => {
+    try {
+      const text = await extractPdfTextLayout(blob)
+      const w2p = parseW2(text)
+      if (!w2p) return null
+      return {
+        year: w2p.year || null,
+        fields: {
+          wages: String(w2p.wages),
+          fedWithholding: String(w2p.fedWithholding),
+          ...(w2p.k401 > 0 ? { k401: String(w2p.k401) } : {}),
+          ...(w2p.hsa > 0 ? { hsa: String(w2p.hsa) } : {}),
+        },
+      }
+    } catch {
+      return null
+    }
+  }
+
   const upload = async file => {
     if (!file) return
     const id = uid()
@@ -39,17 +61,33 @@ export default function TaxDocs() {
       toast(e.message, { kind: 'error' })
       return
     }
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+    const w2read = kind === 'W-2' && isPdf ? await readW2(file) : null
     dispatch({
       type: 'ADD_DOCUMENT',
       payload: {
-        id, section: 'tax', kind, year,
+        id, section: 'tax', kind,
+        year: w2read?.year || year,
         name: file.name, size: file.size, mime: file.type,
         uploadedAt: new Date().toISOString().slice(0, 10),
-        fields: kind === 'W-2' ? {} : undefined,
+        fields: kind === 'W-2' ? (w2read?.fields || {}) : undefined,
       },
     })
-    toast(`${kind} uploaded — stored only in this browser`, { kind: 'good' })
+    if (w2read) {
+      toast(`W-2 read: ${fmt(w2read.fields.wages)} wages, ${fmt(w2read.fields.fedWithholding)} withheld${w2read.year ? ` (${w2read.year})` : ''}`, { kind: 'good' })
+    } else {
+      toast(`${kind} uploaded — stored only in this browser${kind === 'W-2' ? '; couldn’t auto-read boxes, enter them below' : ''}`, { kind: w2read === null && kind === 'W-2' && isPdf ? undefined : 'good' })
+    }
     if (kind === 'W-2') setExpandedId(id)
+  }
+
+  const rereadW2 = async d => {
+    const blob = await getFile(d.id).catch(() => null)
+    if (!blob) return toast('Original file not found in this browser', { kind: 'error' })
+    const w2read = await readW2(blob)
+    if (!w2read) return toast('Couldn’t find W-2 boxes in this file — enter them manually', { kind: 'error' })
+    dispatch({ type: 'UPDATE_DOCUMENT', payload: { id: d.id, fields: { ...d.fields, ...w2read.fields }, ...(w2read.year ? { year: w2read.year } : {}) } })
+    toast(`Read from PDF: ${fmt(w2read.fields.wages)} wages, ${fmt(w2read.fields.fedWithholding)} withheld`, { kind: 'good' })
   }
 
   const remove = async d => {
@@ -181,6 +219,11 @@ export default function TaxDocs() {
                   {d.kind === 'W-2' && expandedId === d.id && (
                     <tr>
                       <td colSpan={6}>
+                        <div className="row gap" style={{ paddingTop: 8 }}>
+                          <button className="btn ghost small" onClick={() => rereadW2(d)}>
+                            <Icon name="file-text" size={13} /> Read boxes from PDF
+                          </button>
+                        </div>
                         <div className="form-grid form-in" style={{ padding: '8px 0' }}>
                           {W2_FIELDS.map(([key, label]) => (
                             <label key={key}>{label}

@@ -12,6 +12,7 @@ import TaxDocs from './components/TaxDocs.jsx'
 import Home from './components/Home.jsx'
 import Goals from './components/Goals.jsx'
 import Retirement from './components/Retirement.jsx'
+import Income from './components/Income.jsx'
 import Report from './components/Report.jsx'
 import Icon, { BrandMark } from './components/Icon.jsx'
 import { useStore } from './store.jsx'
@@ -24,6 +25,7 @@ const NAV = [
   ]},
   { group: 'Money', items: [
     { id: 'accounts', label: 'Accounts', icon: 'landmark' },
+    { id: 'income', label: 'Income', icon: 'wallet' },
     { id: 'transactions', label: 'Transactions', icon: 'list' },
     { id: 'budget', label: 'Budget', icon: 'pie-chart' },
     { id: 'report', label: 'Report', icon: 'bar-chart' },
@@ -118,6 +120,7 @@ export default function App() {
         <main className="content">
           {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
           {tab === 'accounts' && <Accounts />}
+          {tab === 'income' && <Income />}
           {tab === 'transactions' && <Transactions />}
           {tab === 'budget' && <Budget />}
           {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}

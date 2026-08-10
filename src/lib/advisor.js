@@ -4,6 +4,7 @@
 import { localToday, localMonth } from './dates.js'
 import { txParts } from './tx.js'
 import { oopStatus } from './health.js'
+import { paystubYearSummary } from './income.js'
 
 export const LIMITS_2026 = {
   year: 2026,
@@ -193,6 +194,28 @@ export function getRecommendations(state) {
   if (dependents > 0) {
     push('tax', 'info', 'Dependent-related tax breaks',
       'Check eligibility for the Child Tax Credit and the Child & Dependent Care Credit. A Dependent Care FSA (up to $7,500/household for 2026) pays daycare with pre-tax dollars. A 529 plan grows tax-free for education; many states give a deduction for contributions.')
+  }
+
+  // ---------- Payroll (parsed pay statements — verified numbers beat estimates) ----------
+  const payYear = localToday().slice(0, 4)
+  const stubSum = paystubYearSummary(state, payYear)
+  if (stubSum) {
+    const k401Limit = L.k401 + (age >= 50 ? L.k401CatchUp : 0)
+    const employee401k = stubSum.ytd.k401Trad + stubSum.ytd.k401Roth
+    const d = new Date(stubSum.latest.payDate + 'T00:00')
+    const frac = Math.min(1, Math.max(0.02, (d - new Date(`${payYear}-01-01T00:00`) + 86400000) / (365 * 86400000)))
+    const projected = employee401k / frac
+    if (employee401k >= k401Limit) {
+      push('tax', 'good', `401(k) employee limit reached (payroll-verified)`,
+        `Your pay statements show $${Math.round(employee401k).toLocaleString()} of employee deferrals — the ${payYear} limit is done. Anything further goes to after-tax (mega-backdoor) if your plan allows.`)
+    } else if (projected < k401Limit * 0.97) {
+      push('tax', 'warning', `Payroll pace leaves ~$${Math.round(k401Limit - projected).toLocaleString()} of 401(k) space unused`,
+        `Through ${stubSum.latest.payDate} you've deferred $${Math.round(employee401k).toLocaleString()} (payroll-verified); at this pace you'd finish ${payYear} around $${Math.round(projected).toLocaleString()} vs the $${k401Limit.toLocaleString()} employee limit. Raising the deferral percentage now spreads the catch-up over the remaining paychecks.`)
+    }
+    if (stubSum.ytd.k401AfterTax > 0) {
+      push('tax', 'info', `$${Math.round(stubSum.ytd.k401AfterTax).toLocaleString()} of after-tax 401(k) this year — confirm the Roth conversion is automatic`,
+        `After-tax contributions only become the mega-backdoor Roth when they're converted; unconverted, their growth is taxed later. Most plans (including Amazon's) offer automatic daily in-plan Roth conversion — verify it's switched on with your plan administrator.`)
+    }
   }
 
   // ---------- Insurance ----------
