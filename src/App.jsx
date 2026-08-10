@@ -72,7 +72,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand-row">
           <BrandMark size={24} />
-          <span className="brand-name">Finance</span>
+          <span className="brand-name" title="Budgie — sniffs out every dollar">Budgie</span>
         </div>
         {NAV.map((g, gi) => (
           <React.Fragment key={gi}>

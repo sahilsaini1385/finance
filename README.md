@@ -1,4 +1,6 @@
-# 💰 Finance — private personal finance manager
+# 🐶 Budgie — private personal finance manager
+
+> Named after the world's cheapest bird. Mascot is a beagle. We know.
 
 A free, private, in-browser personal finance tool. Track accounts across **Fidelity, Chase, and Bank of America**, import transactions from their CSV exports, log employer **benefits** and **insurance** policies, and get rules-based guidance on **tax management** and **how much insurance you actually need**.
 
