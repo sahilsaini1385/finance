@@ -12,7 +12,9 @@ export const initialState = {
   benefits: [],      // {id, name, type, provider, annualValue, notes, enrolled}
   connections: {
     simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
+    claude: null,    // {token, model} — AI advisor credential (stays in this browser)
   },
+  aiChat: [],        // advisor conversation: {role: 'user'|'assistant', content, at}
   ignoredSimplefinIds: [], // synced accounts the user deleted — never resurrect on sync
   documents: [],     // {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?, notes}
   history: [],       // net-worth snapshots: {date, netWorth, cash, investments, debt} — one per day
@@ -220,6 +222,11 @@ function reducer(state, action) {
     }
     case 'SET_BUDGET_CONFIG':
       return { ...state, budgetConfig: { ...(state.budgetConfig || {}), ...action.payload } }
+    case 'ADD_AI_MESSAGES':
+      // Keep the stored thread bounded — old exchanges age out.
+      return { ...state, aiChat: [...(state.aiChat || []), ...action.payload].slice(-40) }
+    case 'CLEAR_AI_CHAT':
+      return { ...state, aiChat: [] }
     case 'SET_BILL_PREF': {
       const { merchant, status } = action.payload
       const rest = (state.billPrefs || []).filter(p => p.merchant !== merchant)
