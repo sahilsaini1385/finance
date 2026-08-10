@@ -136,8 +136,9 @@ export function getRecommendations(state) {
     push('tax', 'good', 'IRA maxed out', 'You\'re using your full IRA space this year.')
   }
 
-  const sd = L.standardDeduction[p.filingStatus] || L.standardDeduction.single
-  push('tax', 'info', `Standard deduction for ${L.year}: $${sd.toLocaleString()} (${p.filingStatus.toUpperCase()})`,
+  const filing = p.filingStatus || 'single'
+  const sd = L.standardDeduction[filing] || L.standardDeduction.single
+  push('tax', 'info', `Standard deduction for ${L.year}: $${sd.toLocaleString()} (${filing.toUpperCase()})`,
     'Itemize only if mortgage interest + state/local taxes (capped) + charitable gifts exceed this. If you\'re close to the line, "bunch" two years of charitable giving into one year (a donor-advised fund makes this easy) and take the standard deduction the other year.')
 
   // W-2 document review

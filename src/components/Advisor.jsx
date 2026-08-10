@@ -6,6 +6,7 @@ import { projectFI, FI_ASSUMPTIONS } from '../lib/projection.js'
 import { computeTotals } from '../lib/advisor.js'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
+import AskAdvisor from './AskAdvisor.jsx'
 
 const SEV_ICON = { critical: 'octagon-alert', warning: 'alert-triangle', info: 'lightbulb', good: 'check-circle' }
 const AREAS = [
@@ -64,6 +65,8 @@ export default function Advisor() {
           </p>
         </div>
       </div>
+
+      <AskAdvisor />
 
       {savings.recurring.length > 0 && (
         <div className="card">
