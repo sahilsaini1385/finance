@@ -72,16 +72,16 @@ function StatementImport({ state, dispatch, toast, onClose }) {
     : null), [items, freq, baseSalary, state.insurance, state.benefits])
 
   const apply = () => {
-    let added = 0, updated = 0
     for (const op of ops.policies) {
-      if (op.action === 'add') { dispatch({ type: 'ADD_INSURANCE', payload: { ...op.data, id: uid() } }); added++ }
-      else { dispatch({ type: 'UPDATE_INSURANCE', payload: { ...op.data, id: op.id } }); updated++ }
+      if (op.action === 'add') dispatch({ type: 'ADD_INSURANCE', payload: { ...op.data, id: uid() } })
+      else dispatch({ type: 'UPDATE_INSURANCE', payload: { ...op.data, id: op.id } })
     }
     for (const op of ops.benefits) {
-      if (op.action === 'add') { dispatch({ type: 'ADD_BENEFIT', payload: { ...op.data, id: uid() } }); added++ }
-      else { dispatch({ type: 'UPDATE_BENEFIT', payload: { ...op.data, id: op.id } }); updated++ }
+      if (op.action === 'add') dispatch({ type: 'ADD_BENEFIT', payload: { ...op.data, id: uid() } })
+      else dispatch({ type: 'UPDATE_BENEFIT', payload: { ...op.data, id: op.id } })
     }
-    toast(`Imported: ${added} added, ${updated} updated`, { kind: 'good' })
+    const np = ops.policies.length, nb = ops.benefits.length
+    toast(`Imported ${np} ${np === 1 ? 'policy' : 'policies'} → Insurance tab · ${nb} ${nb === 1 ? 'program' : 'programs'} → here`, { kind: 'good' })
     onClose()
   }
 
