@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { parseBenefitsStatement, toAppEntities } from '../lib/benefitsImport.js'
+import { extractPdfText } from '../lib/extract.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -39,6 +40,26 @@ function StatementImport({ state, dispatch, toast, onClose }) {
   const [text, setText] = useState('')
   const [freq, setFreq] = useState('12')
   const [baseSalary, setBaseSalary] = useState('')
+  const [reading, setReading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const fileRef = useRef(null)
+
+  const readFile = async file => {
+    if (!file) return
+    setReading(true)
+    try {
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+      const content = isPdf ? await extractPdfText(file) : await file.text()
+      if (!content || content.trim().length < 40) {
+        toast('Couldn’t read text from that file — if it’s a scanned PDF, paste the text instead', { kind: 'error' })
+      } else {
+        setText(content)
+      }
+    } catch {
+      toast('Couldn’t read that file — paste the statement text instead', { kind: 'error' })
+    }
+    setReading(false)
+  }
 
   const items = useMemo(() => (text.trim().length > 40 ? parseBenefitsStatement(text) : []), [text])
   const ops = useMemo(() => (items.length
@@ -68,18 +89,33 @@ function StatementImport({ state, dispatch, toast, onClose }) {
     <div className="card form-in">
       <h2>Import from a benefits statement</h2>
       <p className="small muted">
-        Open your benefits confirmation statement (Amazon: A to Z → Benefits → confirmation PDF), select all
-        the text, and paste it below. Policies land in the Insurance tab, programs land here. Parsing happens
-        entirely in your browser, and dependent or beneficiary names are never read.
+        Drop in your benefits confirmation statement PDF (Amazon: A to Z → Benefits), or paste its text.
+        Policies land in the Insurance tab, programs land here. Everything is read entirely in your
+        browser — the file is never uploaded anywhere, and dependent or beneficiary names are never read.
       </p>
-      <textarea
-        rows={7}
-        style={{ width: '100%', resize: 'vertical' }}
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="Paste the statement text here…"
-        aria-label="Statement text"
-      />
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); readFile(e.dataTransfer.files?.[0]) }}
+        style={dragOver ? { outline: '2px dashed var(--accent)', outlineOffset: 4, borderRadius: 8 } : undefined}
+      >
+        <div className="row gap" style={{ marginBottom: 8, alignItems: 'center' }}>
+          <button className="btn" type="button" onClick={() => fileRef.current?.click()} disabled={reading}>
+            <Icon name="file" size={14} /> {reading ? 'Reading PDF…' : 'Choose PDF…'}
+          </button>
+          <span className="small muted">or drag it anywhere in this box, or paste the text below</span>
+          <input ref={fileRef} type="file" accept="application/pdf,.pdf,text/plain,.txt" hidden
+            onChange={e => { readFile(e.target.files?.[0]); e.target.value = '' }} />
+        </div>
+        <textarea
+          rows={7}
+          style={{ width: '100%', resize: 'vertical' }}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Paste the statement text here…"
+          aria-label="Statement text"
+        />
+      </div>
       <div className="form-grid" style={{ marginTop: 10 }}>
         <label>Pay frequency (statement costs are per pay period)
           <select value={freq} onChange={e => setFreq(e.target.value)}>
