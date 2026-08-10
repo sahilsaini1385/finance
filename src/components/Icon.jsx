@@ -218,13 +218,24 @@ export default function Icon({ name, size = 16, className }) {
   )
 }
 
+// Budgie the beagle — the two-tone face mark. Seven flat shapes so the
+// blaze/ears/nose silhouette survives down to 16px.
 export function BrandMark({ size = 24 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <rect width="24" height="24" rx="6" fill="var(--accent)" />
-      <path d="M7 16.5v-4" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M12 16.5v-7" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M17 16.5v-10" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <ellipse cx="16" cy="17.5" rx="10" ry="9.5" fill="#b97a48" />
+      <rect x="2" y="8.5" width="7" height="16" rx="3.5" fill="#8a5a34" transform="rotate(-7 5.5 9)" />
+      <rect x="23" y="8.5" width="7" height="16" rx="3.5" fill="#8a5a34" transform="rotate(7 26.5 9)" />
+      <path
+        d="M14.6 8.0 C15.4 7.55 16.6 7.55 17.4 8.0 C18.2 11.4 19.6 14.6 20.6 18.0 C21.9 22.3 19.8 25.8 16 25.8 C12.2 25.8 10.1 22.3 11.4 18.0 C12.4 14.6 13.8 11.4 14.6 8.0 Z"
+        fill="#f9f9f7"
+      />
+      <circle cx="10.8" cy="15.3" r="1.75" fill="#1b1a17" />
+      <circle cx="21.2" cy="15.3" r="1.75" fill="#1b1a17" />
+      <path
+        d="M16 22.6 C14.2 22.6 12.9 21.5 12.9 20.3 C12.9 19.1 14.3 18.4 16 18.4 C17.7 18.4 19.1 19.1 19.1 20.3 C19.1 21.5 17.8 22.6 16 22.6 Z"
+        fill="#1b1a17"
+      />
     </svg>
   )
 }
