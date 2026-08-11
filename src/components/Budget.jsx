@@ -9,6 +9,7 @@ import { detectRecurring, normalizeMerchant } from '../lib/savings.js'
 import { paystubMonthlyNetMedian, paystubYearSummary, annualizeYtd } from '../lib/income.js'
 import { withinTolerance } from '../lib/facts.js'
 import { localMonth, localToday } from '../lib/dates.js'
+import { txParts } from '../lib/tx.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import { useAutoCategorize } from './useAutoCategorize.js'
@@ -82,6 +83,7 @@ export default function Budget() {
   const [armedId, setArmedId] = useState(null)
   const [moveOpen, setMoveOpen] = useState(false)
   const [move, setMove] = useState({ from: '', to: '', amt: '' })
+  const [openCat, setOpenCat] = useState(null)
 
   const budgets = effectiveBudgets(state, month)
   const { income, spentByCat, needsReview } = useMemo(() => monthActivity(state, month), [state.transactions, month])
@@ -210,6 +212,29 @@ export default function Budget() {
     return 'var(--accent)'
   }
 
+  // The transactions behind a category's Spent figure this month —
+  // split-aware: a split's part counts toward the part's category.
+  const catBreakdown = cat => {
+    const rows = []
+    for (const t of state.transactions) {
+      if (!t.date?.startsWith(month)) continue
+      for (const p of txParts(t)) {
+        if (p.category !== cat) continue
+        rows.push({
+          key: `${t.id}-${p === t ? 'full' : p.id || rows.length}`,
+          date: t.date, description: t.description, amount: p.amount, split: p !== t,
+          account: accountName(t.accountId),
+        })
+      }
+    }
+    rows.sort((a, b) => a.amount - b.amount) // biggest expense first
+    return rows
+  }
+  const accountName = id => {
+    const a = state.accounts.find(x => x.id === id)
+    return a ? `${a.institution} ${a.name}` : ''
+  }
+
   // Pace projection only makes sense for day-by-day spending — fixed bills
   // land as lumps (mortgage on the 1st would "project" to 4× itself).
   const renderRows = (cats, { showPace = true } = {}) => cats.map(cat => {
@@ -221,10 +246,21 @@ export default function Budget() {
     const proj = showPace && isCurrent && b > 0 && s > 0 ? paceProjection(s, dayOfMonth, daysInMonth) : null
     const over = availBudget > 0 && s > availBudget
     const custom = state.customCategories?.find(c => c.name === cat)
+    const isOpen = openCat === cat
     return (
-      <tr key={cat}>
+      <React.Fragment key={cat}>
+      <tr>
         <td>
-          {cat}
+          <button
+            className="btn ghost small"
+            style={{ padding: '2px 4px', fontWeight: 500, fontSize: 'inherit' }}
+            aria-expanded={isOpen}
+            title={`Show the transactions behind ${cat}'s spending`}
+            onClick={() => setOpenCat(isOpen ? null : cat)}
+          >
+            <span aria-hidden style={{ display: 'inline-block', width: 12, opacity: 0.55, transition: 'transform 120ms', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+            {cat}
+          </button>
           {custom && (
             <button
               className="btn ghost small"
@@ -268,6 +304,46 @@ export default function Budget() {
           {carry > 0 && <div className="small muted money" style={{ fontWeight: 400 }}>incl. {fmt(carry)} carried</div>}
         </td>
       </tr>
+      {isOpen && (() => {
+        const rows = catBreakdown(cat)
+        const net = rows.reduce((sum, r) => sum + -r.amount, 0)
+        return (
+          <tr>
+            <td colSpan={6} style={{ background: 'var(--surface-2)' }}>
+              {rows.length === 0 ? (
+                <p className="small muted" style={{ margin: '6px 0' }}>No transactions in {monthLabel} for {cat} yet.</p>
+              ) : (
+                <div style={{ padding: '4px 0 8px' }}>
+                  <table className="table" style={{ margin: 0 }}>
+                    <tbody>
+                      {rows.slice(0, 40).map(r => (
+                        <tr key={r.key}>
+                          <td className="small" style={{ width: 90 }}>{r.date.slice(5)}</td>
+                          <td className="desc small">
+                            {r.description}
+                            {r.split && <span className="chip" style={{ marginLeft: 6 }}>part of a split</span>}
+                          </td>
+                          <td className="small muted">{r.account}</td>
+                          <td className="num small" style={r.amount > 0 ? { color: 'var(--good-text)' } : undefined}>
+                            {r.amount > 0 ? `+${fmt(r.amount)} refund` : fmt(-r.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="small muted money" style={{ margin: '6px 0 0' }}>
+                    {rows.length > 40 && `Showing the 40 largest of ${rows.length} · `}
+                    {rows.length} transaction{rows.length > 1 ? 's' : ''} net to <strong>{fmt(Math.max(0, net))}</strong>
+                    {net < 0 && ' (refunds exceed spending this month, so the envelope counts $0)'}
+                    {' '}— that's the Spent figure above. Fix a category on the Transactions tab.
+                  </p>
+                </div>
+              )}
+            </td>
+          </tr>
+        )
+      })()}
+      </React.Fragment>
     )
   })
 
