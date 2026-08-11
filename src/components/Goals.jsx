@@ -3,6 +3,8 @@ import { useStore, uid, fmt } from '../store.jsx'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
+import { goalPace } from '../lib/goals.js'
+
 const blank = { name: '', target: '', targetDate: '', accountIds: [], note: '' }
 
 function monthsUntil(dateStr) {
@@ -166,6 +168,38 @@ export default function Goals() {
                 )}
                 {g.note && <> · {g.note}</>}
               </div>
+              {!done && (() => {
+                const p = goalPace(state, g)
+                if (p.status === 'no-data') {
+                  return linkedCount > 0 ? (
+                    <div className="muted small money" style={{ marginTop: 4 }}>
+                      Pace unknown — the linked account{linkedCount > 1 ? 's have' : ' has'} no synced transactions yet.
+                    </div>
+                  ) : null
+                }
+                const paceText = p.pace > 0
+                  ? `Adding ~${fmt(p.pace)}/mo (net, last 3 months)`
+                  : p.pace < 0
+                    ? `Net withdrawals of ~${fmt(-p.pace)}/mo over the last 3 months`
+                    : 'No net deposits in the last 3 months'
+                return (
+                  <div className="small money" style={{ marginTop: 4 }}>
+                    {p.status === 'on-track' && (
+                      <span style={{ color: 'var(--good-text)', fontWeight: 600 }}>On track</span>
+                    )}
+                    {p.status === 'behind' && (
+                      <span style={{ color: 'var(--warning-text)', fontWeight: 600 }}>Behind pace</span>
+                    )}
+                    {(p.status === 'on-track' || p.status === 'behind') && ' · '}
+                    <span className="muted">
+                      {paceText}
+                      {p.status === 'behind' && p.neededMonthly !== null && ` — needs ${fmt(p.neededMonthly)}/mo for ${g.targetDate}`}
+                      {p.etaLabel && (p.status === 'behind' || p.status === 'pacing') && ` · at this pace: ~${p.etaLabel}`}
+                      {p.status === 'stalled' && ' — set up an automatic transfer to get moving'}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
           )
         })
