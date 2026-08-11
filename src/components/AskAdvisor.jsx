@@ -1,7 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.jsx'
 import { buildFinancialContext } from '../lib/aiContext.js'
-import { streamAdvice, advisorSystemPrompt, tokenKind, bridgeHealth, OAUTH_TOKEN_MSG, DEFAULT_MODEL, MODELS } from '../lib/claude.js'
+import { advisorSystemPrompt, OAUTH_TOKEN_MSG } from '../lib/claude.js'
+import { activeProvider } from '../lib/providers.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -38,7 +39,11 @@ function renderAnswer(text) {
 export default function AskAdvisor() {
   const { state, dispatch } = useStore()
   const toast = useToast()
-  const conn = state.connections?.claude || null
+  // The advisor is provider-agnostic; today's active provider is Claude.
+  // See src/lib/providers.js for how other AI accounts slot in.
+  const provider = activeProvider()
+  const { tokenKind, bridgeHealth, streamChat, models: MODELS, defaultModel: DEFAULT_MODEL } = provider
+  const conn = state.connections?.[provider.id] || null
   const [tokenInput, setTokenInput] = useState('')
   const [setupError, setSetupError] = useState('')
   const [setupOpen, setSetupOpen] = useState(false)
@@ -66,7 +71,7 @@ export default function AskAdvisor() {
       return
     }
     setSetupError('')
-    dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: { token, model } } })
+    dispatch({ type: 'SET_CONNECTION', payload: { kind: provider.id, value: { token, model } } })
     setTokenInput('')
     toast('Connected — the advisor is ready', { kind: 'good' })
   }
@@ -88,12 +93,12 @@ export default function AskAdvisor() {
       return
     }
     setBridgeFail(false)
-    dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: { token: 'bridge', model } } })
+    dispatch({ type: 'SET_CONNECTION', payload: { kind: provider.id, value: { token: 'bridge', model } } })
     toast('Connected — the advisor runs on your Claude plan', { kind: 'good' })
   }
 
   const disconnect = () => {
-    dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: null } })
+    dispatch({ type: 'SET_CONNECTION', payload: { kind: provider.id, value: null } })
     toast('AI advisor disconnected — chat history kept')
   }
 
@@ -114,7 +119,7 @@ export default function AskAdvisor() {
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      const answer = await streamAdvice({
+      const answer = await streamChat({
         token: conn.token,
         model: conn.model || DEFAULT_MODEL,
         system: advisorSystemPrompt(JSON.stringify(ctx)),
@@ -162,7 +167,7 @@ export default function AskAdvisor() {
       <div className="card">
         <div className="row gap wrap" style={{ alignItems: 'center' }}>
           <h2 style={{ margin: 0, flex: '1 1 260px' }}>
-            <span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances
+            <span className="icon-chip"><Icon name="sparkle" /></span> Ask Budgie about your finances
           </h2>
           <span className="small muted">Chat with an AI that sees your full picture — runs on your Claude subscription or an API key.</span>
           <button className="btn primary" onClick={() => setSetupOpen(true)}>Set up</button>
@@ -175,7 +180,7 @@ export default function AskAdvisor() {
     return (
       <div className="card">
         <div className="page-head" style={{ marginBottom: 0 }}>
-          <h2 style={{ margin: 0 }}><span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances</h2>
+          <h2 style={{ margin: 0 }}><span className="icon-chip"><Icon name="sparkle" /></span> Ask Budgie about your finances</h2>
           {legacyOauth
             ? <button className="btn ghost small" onClick={disconnect}>Disconnect</button>
             : <button className="btn ghost small" onClick={() => setSetupOpen(false)}>Hide</button>}
@@ -261,8 +266,8 @@ export default function AskAdvisor() {
       <div className="page-head" style={{ marginBottom: 4 }}>
         <h2 style={{ margin: 0 }}>
           <span className="icon-chip"><Icon name="sparkle" /></span>
-          Ask Claude
-          <span className="badge">{conn.token === 'bridge' ? 'your Claude plan' : 'API credits'}</span>
+          Ask Budgie
+          <span className="badge">{conn.token === 'bridge' ? `your ${provider.label} plan` : 'API credits'}</span>
         </h2>
         <div className="row gap">
           {chat.length > 0 && (
