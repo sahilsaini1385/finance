@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.jsx'
 import { buildFinancialContext } from '../lib/aiContext.js'
-import { streamAdvice, advisorSystemPrompt, tokenKind, DEFAULT_MODEL, MODELS } from '../lib/claude.js'
+import { streamAdvice, advisorSystemPrompt, tokenKind, OAUTH_TOKEN_MSG, DEFAULT_MODEL, MODELS } from '../lib/claude.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -40,6 +40,7 @@ export default function AskAdvisor() {
   const toast = useToast()
   const conn = state.connections?.claude || null
   const [tokenInput, setTokenInput] = useState('')
+  const [setupError, setSetupError] = useState('')
   const [setupOpen, setSetupOpen] = useState(false)
   const [model, setModel] = useState(conn?.model || DEFAULT_MODEL)
   const [question, setQuestion] = useState('')
@@ -54,12 +55,19 @@ export default function AskAdvisor() {
   const connect = () => {
     const token = tokenInput.trim()
     if (!token.startsWith('sk-ant-')) {
-      toast('That doesn’t look like an Anthropic token (should start with sk-ant-…)', { kind: 'error' })
+      setSetupError('That doesn’t look like an Anthropic key (should start with sk-ant-…)')
       return
     }
+    if (tokenKind(token) === 'oauth') {
+      // Claude Code tokens are rejected by Anthropic's API outside Claude Code
+      // itself — refuse here, with the reason, rather than 401 on first question.
+      setSetupError(OAUTH_TOKEN_MSG)
+      return
+    }
+    setSetupError('')
     dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: { token, model } } })
     setTokenInput('')
-    toast(tokenKind(token) === 'oauth' ? 'Connected — using your Claude plan' : 'Connected — using API credits', { kind: 'good' })
+    toast('Connected — the advisor is ready', { kind: 'good' })
   }
 
   const disconnect = () => {
@@ -120,6 +128,11 @@ export default function AskAdvisor() {
     [state.accounts.length],
   )
 
+  // A connection saved back when the app offered `claude setup-token` — those
+  // tokens turned out to be unusable outside Claude Code, so send the user
+  // back through setup with the real explanation instead of a dead chat box.
+  const legacyOauth = Boolean(conn) && tokenKind(conn.token) === 'oauth'
+
   if (!conn && !setupOpen) {
     // Compact teaser — the full setup instructions only unfold on request,
     // so an unconnected AI card doesn't push real advice below the fold.
@@ -129,36 +142,46 @@ export default function AskAdvisor() {
           <h2 style={{ margin: 0, flex: '1 1 260px' }}>
             <span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances
           </h2>
-          <span className="small muted">Chat with an AI that sees your full picture — runs on your own Claude plan.</span>
+          <span className="small muted">Chat with an AI that sees your full picture — connect your own Anthropic API key.</span>
           <button className="btn primary" onClick={() => setSetupOpen(true)}>Set up</button>
         </div>
       </div>
     )
   }
 
-  if (!conn) {
+  if (!conn || legacyOauth) {
     return (
       <div className="card">
         <div className="page-head" style={{ marginBottom: 0 }}>
           <h2 style={{ margin: 0 }}><span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances</h2>
-          <button className="btn ghost small" onClick={() => setSetupOpen(false)}>Hide</button>
+          {legacyOauth
+            ? <button className="btn ghost small" onClick={disconnect}>Disconnect</button>
+            : <button className="btn ghost small" onClick={() => setSetupOpen(false)}>Hide</button>}
         </div>
+        {legacyOauth && (
+          <p className="error small">
+            The saved token is a Claude Code token (<code>sk-ant-oat…</code>). It turns out Anthropic’s API
+            rejects those everywhere outside Claude Code itself — that’s the “rejected the token” error, and no
+            fresh token will fix it. Connect with an API key below instead.
+          </p>
+        )}
         <p className="muted small">
           Chat with a Claude model that can see your whole financial picture — budget, taxes, retirement outlook,
           insurance, goals — hunt down tax breaks you're missing, and research current rates and rules on the web.
-          It sticks to money topics only. Connect with your own Anthropic credential; questions run on{' '}
-          <strong>your</strong> plan, and your data is sent only when you ask.
+          It sticks to money topics only. Connect with your own Anthropic API key; your data is sent only when
+          you ask a question.
         </p>
         <ol className="how-to small">
           <li>
-            <strong>Use your Claude subscription (Pro/Max):</strong> in a terminal with Claude Code installed, run{' '}
-            <code>claude setup-token</code> and paste the token (starts <code>sk-ant-oat…</code>). Usage counts
-            against your existing plan — no separate credits.
+            <strong>Create an API key</strong> at{' '}
+            <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com/settings/keys</a>{' '}
+            (starts <code>sk-ant-api…</code>) and add a few dollars of credit — a typical question costs a few
+            cents on Opus, less on Haiku.
           </li>
           <li>
-            <strong>Or use an API key</strong> from{' '}
-            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>{' '}
-            (starts <code>sk-ant-api…</code>, pay-as-you-go).
+            <strong>Paste it below</strong> and pick a model. Heads-up: Claude Pro/Max subscriptions can’t be
+            used here — tokens from <code>claude setup-token</code> only work inside Claude Code itself, and
+            Anthropic’s API rejects them from any other app.
           </li>
         </ol>
         <div className="row gap wrap">
@@ -167,14 +190,15 @@ export default function AskAdvisor() {
             style={{ flex: '1 1 260px' }}
             value={tokenInput}
             onChange={e => setTokenInput(e.target.value)}
-            placeholder="Paste sk-ant-… token"
-            aria-label="Anthropic token"
+            placeholder="Paste sk-ant-api… key"
+            aria-label="Anthropic API key"
           />
           <select value={model} aria-label="Model" onChange={e => setModel(e.target.value)}>
             {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
           <button className="btn primary" onClick={connect} disabled={!tokenInput.trim()}>Connect</button>
         </div>
+        {setupError && <p className="error small">{setupError}</p>}
         <div className="trust-note">
           <Icon name="lock" size={12} /> Stored only in this browser. When you ask a question, a compact summary
           of your finances goes to Anthropic to answer it — nothing is sent otherwise.
@@ -189,7 +213,7 @@ export default function AskAdvisor() {
         <h2 style={{ margin: 0 }}>
           <span className="icon-chip"><Icon name="sparkle" /></span>
           Ask Claude
-          <span className="badge">{tokenKind(conn.token) === 'oauth' ? 'your Claude plan' : 'API credits'}</span>
+          <span className="badge">API credits</span>
         </h2>
         <div className="row gap">
           {chat.length > 0 && (
