@@ -11,7 +11,7 @@ import { marginalRate } from './taxTables.js'
 import { buildTaxSummary } from './report.js'
 import { effectiveBudgets, monthActivity, computeSafeToSpend } from './budget.js'
 import { monthStats } from './report.js'
-import { detectRecurring } from './savings.js'
+import { detectRecurring, benchmarkBill } from './savings.js'
 import { retirementParams, deterministicProjection, monteCarloRetirement } from './retirement.js'
 import { localMonth } from './dates.js'
 import { oopStatus } from './health.js'
@@ -36,7 +36,13 @@ export function buildFinancialContext(state) {
   const bills = recurring
     .filter(b => !ignored.has(b.merchant))
     .slice(0, 20)
-    .map(b => ({ name: b.merchant.toLowerCase(), cadence: b.cadence, monthly: r0(b.monthlyCost) }))
+    .map(b => {
+      const bm = benchmarkBill(b)
+      return {
+        name: b.merchant.toLowerCase(), cadence: b.cadence, monthly: r0(b.monthlyCost),
+        ...(bm ? { typicalMarketRange: `$${bm.low}-$${bm.high}/mo (rough national)`, aboveTypical: bm.over } : {}),
+      }
+    })
 
   const ctx = {
     today: new Date().toDateString(),
