@@ -16,6 +16,7 @@ import { retirementParams, deterministicProjection, monteCarloRetirement } from 
 import { localMonth } from './dates.js'
 import { oopStatus } from './health.js'
 import { paystubYearSummary } from './income.js'
+import { goalPace } from './goals.js'
 import { projectFI } from './projection.js'
 
 const r0 = n => Math.round(Number(n) || 0)
@@ -113,11 +114,16 @@ export function buildFinancialContext(state) {
       }
       return base
     }),
-    goals: (state.goals || []).map(g => ({
-      name: g.name, target: r0(g.target), targetDate: g.targetDate || null,
-      saved: r0((state.accounts || []).filter(a => (g.accountIds || []).includes(a.id))
-        .reduce((s, a) => s + (parseFloat(a.balance) || 0), 0)),
-    })),
+    goals: (state.goals || []).map(g => {
+      const p = goalPace(state, g)
+      return {
+        name: g.name, target: r0(g.target), targetDate: g.targetDate || null,
+        saved: r0(p.saved),
+        depositPaceMonthly: r0(p.pace),
+        neededMonthly: p.neededMonthly !== null ? r0(p.neededMonthly) : undefined,
+        status: p.status,
+      }
+    }),
     home: state.home?.currentValue ? {
       value: r0(state.home.currentValue),
       mortgageBalance: r0(state.home.mortgageBalance),
