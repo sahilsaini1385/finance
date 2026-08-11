@@ -3,6 +3,7 @@ import { computeTotals } from './lib/advisor.js'
 import { localToday, localMonth } from './lib/dates.js'
 import { buildMonthlyReport, reportHasData } from './lib/report.js'
 import { scanForTransfers, SCAN_VERSION } from './lib/transfers.js'
+import { migrateAmazonCategory } from './lib/categorize.js'
 
 const STORAGE_KEY = 'finance-app-v1'
 
@@ -11,6 +12,7 @@ export const initialState = {
   transactions: [],  // {id, accountId, date, description, amount, category, source, hash}
   benefits: [],      // {id, name, type, provider, annualValue, notes, enrolled}
   paystubs: [],      // parsed pay statements: {id, employer, payDate, gross, net, taxes[], deductions[], …}
+  migrations: {},    // one-time data-migration flags, e.g. {amazonCategory: true}
   connections: {
     simplefin: null, // {accessUrl, connectedAt, lastSync, proxyUrl}
     claude: null,    // {token, model} — AI advisor credential (stays in this browser)
@@ -321,7 +323,13 @@ export function StoreProvider({ children }) {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
-        return { ...init, ...parsed, profile: { ...init.profile, ...(parsed.profile || {}) } }
+        let merged = { ...init, ...parsed, profile: { ...init.profile, ...(parsed.profile || {}) } }
+        // One-time data migrations, flagged so they never re-run.
+        if (!merged.migrations?.amazonCategory) {
+          const { transactions } = migrateAmazonCategory(merged.transactions, merged.rules)
+          merged = { ...merged, transactions, migrations: { ...(merged.migrations || {}), amazonCategory: true } }
+        }
+        return merged
       }
     } catch (e) {
       console.error('Failed to load saved data', e)
