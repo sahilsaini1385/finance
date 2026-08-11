@@ -154,6 +154,31 @@ const SERVICE_FAMILIES = [
 const DELIVERY_RE = /doordash|grubhub|ubereats|uber eats|postmates|instacart|caviar|seamless/i
 const FEE_RE = /fee|overdraft|service charge|atm /i
 
+// Rough national market ranges for common recurring services — deliberately
+// conservative and clearly labeled as benchmarks, updated ~annually like the
+// IRS limits. A bill has to clear the high end with margin before we say
+// anything, so regional/tier differences don't produce nagging.
+export const BILL_BENCHMARKS = [
+  { key: 'internet', label: 'home internet', re: /comcast|xfinity|spectrum|cox comm|centurylink|frontier comm|fios|att u-?verse|att internet|quantum fiber/i,
+    low: 50, high: 85, tip: 'Fiber and 5G home internet (T-Mobile/Verizon, ~$50 flat) have made this the easiest bill to re-shop. If you stay, call retention and ask for the current promo rate — "I\'m considering switching" routinely knocks $20–40/mo off.' },
+  { key: 'wireless', label: 'wireless phone service', re: /t-mobile|tmobile|verizon wr?ls|verizon wireless|at&t mobil|att mobil|sprint/i,
+    low: 30, high: 90, tip: 'MVNOs on the same towers (Mint, Visible, US Mobile) run $15–30/line. Family plans above ~$45/line are paying for the brand, not the coverage.' },
+  { key: 'autoInsurance', label: 'auto insurance', re: /geico|progressive|state farm|allstate|liberty mutual|farmers ins|usaa/i,
+    low: 80, high: 170, tip: 'Per-vehicle full coverage varies hugely by state and record, but loyalty pricing is real — two quotes at renewal typically beat a 3-year-old policy by 10–25%.' },
+  { key: 'homeSecurity', label: 'home security monitoring', re: /\badt\b|vivint|brinks home|simplisafe|ring protect/i,
+    low: 20, high: 45, tip: 'Self-install systems (SimpliSafe, Ring) monitor for $20–30/mo with no contract — legacy contracts at $50–60/mo are mostly paying for the truck that installed it years ago.' },
+  { key: 'gym', label: 'gym membership', re: /planet fitness|la fitness|24 hour fitness|equinox|lifetime fitness|crunch fitness|ymca/i,
+    low: 15, high: 80, tip: 'Worth it if you go. If attendance has slipped, most chains have a cheaper tier — or your health plan/employer may reimburse part of it.' },
+]
+
+export function benchmarkBill(bill) {
+  const b = BILL_BENCHMARKS.find(x => x.re.test(bill.merchant))
+  if (!b) return null
+  // Only speak up when clearly above the range (5% grace over the high end).
+  const over = bill.monthlyCost > b.high * 1.05
+  return { ...b, over, overBy: over ? Math.round(bill.monthlyCost - (b.low + b.high) / 2) : 0 }
+}
+
 // Returns advisor-style recs (area: 'savings') plus the recurring table data.
 export function getSavingsInsights(state) {
   const txs = state.transactions || []
@@ -167,6 +192,14 @@ export function getSavingsInsights(state) {
   if (recurring.length > 0) {
     push('info', `${recurring.length} recurring charges cost you ~$${Math.round(monthlyTotal).toLocaleString()}/mo (~$${Math.round(monthlyTotal * 12).toLocaleString()}/yr)`,
       'The full list is in the table below. The average household pays for at least one subscription it forgot about — scan the list for anything you haven\'t used in the last month and cancel it; that\'s pure savings with zero lifestyle cost.')
+  }
+
+  // Market-rate check: recurring bills clearly above typical national ranges.
+  for (const bill of recurring) {
+    const b = benchmarkBill(bill)
+    if (!b || !b.over) continue
+    push('warning', `${bill.merchant.toLowerCase()} at $${Math.round(bill.monthlyCost)}/mo — above typical ${b.label} pricing`,
+      `Typical ${b.label} runs $${b.low}–$${b.high}/mo (rough national range — your speed tier, coverage, or region may justify more). Getting to the middle of that range would save ~$${b.overBy.toLocaleString()}/mo (~$${(b.overBy * 12).toLocaleString()}/yr). ${b.tip} Ask the AI advisor to research current rates in your area for specifics.`)
   }
 
   // Overlapping services within a family
