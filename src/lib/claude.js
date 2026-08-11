@@ -3,16 +3,24 @@
 // browser, with the same-origin /api/claude proxy as a CORS fallback — the
 // same transport-chain pattern the SimpleFIN integration uses.
 //
-// Credentials: a Console API key (sk-ant-api..., pay-as-you-go), sent as
-// x-api-key. Claude-subscription OAuth tokens (sk-ant-oat..., from
-// `claude setup-token`) are detected only to be REJECTED with guidance:
-// Anthropic's Messages API does not accept them — they work solely inside
-// Claude Code / the Claude Agent SDK, and Anthropic has declined to change
-// that (anthropics/claude-code#37205, closed not-planned). No header
-// combination makes them work here.
+// Two ways to power the advisor:
 //
-// The key lives only in this browser's localStorage and is sent only to
-// Anthropic (or the stateless same-origin proxy that forwards to Anthropic).
+//   'bridge'       Claude subscription (Pro/Max) via the Budgie bridge — a
+//                  small script (public/budgie-bridge.py) the user runs on
+//                  their own computer. It drives their installed, logged-in
+//                  Claude Code headlessly, so usage is covered by their plan.
+//                  This is the sanctioned subscription route: Anthropic
+//                  supports headless Claude Code for scripts, while the raw
+//                  Messages API rejects subscription OAuth tokens
+//                  (sk-ant-oat..., from `claude setup-token`) everywhere
+//                  outside Claude Code (anthropics/claude-code#37205, closed
+//                  not-planned). Pasted sk-ant-oat tokens are therefore
+//                  detected only to be refused with guidance.
+//   sk-ant-api...  Console API key, pay-as-you-go, sent as x-api-key.
+//
+// The credential lives only in this browser's localStorage. Questions go
+// from the browser to Anthropic directly (or via the stateless same-origin
+// proxy), or to the loopback bridge — never anywhere else.
 
 export const DEFAULT_MODEL = 'claude-opus-5'
 export const MODELS = [
@@ -22,14 +30,72 @@ export const MODELS = [
 ]
 
 export function tokenKind(token) {
-  return String(token || '').startsWith('sk-ant-oat') ? 'oauth' : 'apikey'
+  const t = String(token || '')
+  return t === 'bridge' ? 'bridge' : t.startsWith('sk-ant-oat') ? 'oauth' : 'apikey'
 }
 
 export const OAUTH_TOKEN_MSG =
   'That’s a Claude Code token (sk-ant-oat…). Anthropic’s API only accepts those ' +
-  'inside Claude Code itself — no app can use them, so subscription usage can’t be ' +
-  'shared here. Create an API key at platform.claude.com/settings/keys ' +
-  '(starts sk-ant-api…, pay-as-you-go) and connect with that instead.'
+  'inside Claude Code itself, so pasting one here can’t work. To use your Claude ' +
+  'subscription, pick “Use my Claude subscription” above and run the bridge instead.'
+
+export const BRIDGE_URL = 'http://127.0.0.1:8765'
+const BRIDGE_DOWN_MSG =
+  'Couldn’t reach the Budgie bridge on this computer. Is `python3 budgie-bridge.py` ' +
+  'still running in a terminal window? Start it and try again.'
+
+// Probes the local bridge. Returns its health JSON, or null when unreachable.
+export async function bridgeHealth() {
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 2500)
+    const res = await fetch(`${BRIDGE_URL}/health`, { signal: ctrl.signal })
+    clearTimeout(t)
+    const j = await res.json()
+    return j && j.bridge === 'budgie' ? j : null
+  } catch {
+    return null
+  }
+}
+
+// Streams one advisor turn through the local bridge (NDJSON over loopback).
+async function streamBridge({ model, system, messages, onText, signal }) {
+  const systemText = Array.isArray(system)
+    ? system.map(b => b?.text || '').join('\n')
+    : String(system || '')
+  let res
+  try {
+    res = await fetch(`${BRIDGE_URL}/advice`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ system: systemText, messages, model: model || DEFAULT_MODEL }),
+      signal,
+    })
+  } catch (err) {
+    if (signal?.aborted) throw err
+    throw new Error(BRIDGE_DOWN_MSG)
+  }
+  if (!res.ok || !res.body) throw new Error(BRIDGE_DOWN_MSG)
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let text = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop()
+    for (const line of lines) {
+      if (!line.trim()) continue
+      let ev
+      try { ev = JSON.parse(line) } catch { continue }
+      if (ev.text) { text += ev.text; onText?.(text) }
+      if (ev.error) throw new Error(`Your Claude Code reported: ${ev.error}`)
+    }
+  }
+  return text
+}
 
 async function makeClient(token, { viaProxy = false } = {}) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
@@ -49,6 +115,7 @@ const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_u
 // (some credential types don't allow server tools). onText receives text
 // deltas; resolves with the final assistant text.
 export async function streamAdvice({ token, model, system, messages, onText, signal }) {
+  if (tokenKind(token) === 'bridge') return streamBridge({ model, system, messages, onText, signal })
   // Guard for connections stored before the app learned these can't work —
   // fail with the real explanation instead of a misleading 401 from Anthropic.
   if (tokenKind(token) === 'oauth') throw new Error(OAUTH_TOKEN_MSG)

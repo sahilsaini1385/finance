@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { useStore } from '../store.jsx'
 import { buildFinancialContext } from '../lib/aiContext.js'
-import { streamAdvice, advisorSystemPrompt, tokenKind, OAUTH_TOKEN_MSG, DEFAULT_MODEL, MODELS } from '../lib/claude.js'
+import { streamAdvice, advisorSystemPrompt, tokenKind, bridgeHealth, OAUTH_TOKEN_MSG, DEFAULT_MODEL, MODELS } from '../lib/claude.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -42,6 +42,7 @@ export default function AskAdvisor() {
   const [tokenInput, setTokenInput] = useState('')
   const [setupError, setSetupError] = useState('')
   const [setupOpen, setSetupOpen] = useState(false)
+  const [probing, setProbing] = useState(false)
   const [model, setModel] = useState(conn?.model || DEFAULT_MODEL)
   const [question, setQuestion] = useState('')
   const [streaming, setStreaming] = useState(null) // partial assistant text while a turn runs
@@ -68,6 +69,27 @@ export default function AskAdvisor() {
     dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: { token, model } } })
     setTokenInput('')
     toast('Connected — the advisor is ready', { kind: 'good' })
+  }
+
+  const connectBridge = async () => {
+    setProbing(true)
+    setSetupError('')
+    const health = await bridgeHealth()
+    setProbing(false)
+    if (!health) {
+      setSetupError(
+        'No bridge found on this computer. Make sure `python3 budgie-bridge.py` is running ' +
+        'in a terminal window, then try again. (Safari blocks localhost from web pages — ' +
+        'use Chrome, Edge, Arc, or Firefox for the subscription option.)',
+      )
+      return
+    }
+    if (!health.ok) {
+      setSetupError('The bridge is running but couldn’t find Claude Code. Install it from claude.com/claude-code, run `claude` once to log in, then restart the bridge.')
+      return
+    }
+    dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: { token: 'bridge', model } } })
+    toast('Connected — the advisor runs on your Claude plan', { kind: 'good' })
   }
 
   const disconnect = () => {
@@ -142,7 +164,7 @@ export default function AskAdvisor() {
           <h2 style={{ margin: 0, flex: '1 1 260px' }}>
             <span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances
           </h2>
-          <span className="small muted">Chat with an AI that sees your full picture — connect your own Anthropic API key.</span>
+          <span className="small muted">Chat with an AI that sees your full picture — runs on your Claude subscription or an API key.</span>
           <button className="btn primary" onClick={() => setSetupOpen(true)}>Set up</button>
         </div>
       </div>
@@ -160,44 +182,49 @@ export default function AskAdvisor() {
         </div>
         {legacyOauth && (
           <p className="error small">
-            The saved token is a Claude Code token (<code>sk-ant-oat…</code>). It turns out Anthropic’s API
-            rejects those everywhere outside Claude Code itself — that’s the “rejected the token” error, and no
-            fresh token will fix it. Connect with an API key below instead.
+            The saved token is a Claude Code token (<code>sk-ant-oat…</code>) — Anthropic’s API rejects those
+            outside Claude Code itself, which is what the “rejected the token” error was. Good news: the new
+            “Use my Claude subscription” option below gets you there without pasting any token.
           </p>
         )}
         <p className="muted small">
           Chat with a Claude model that can see your whole financial picture — budget, taxes, retirement outlook,
           insurance, goals — hunt down tax breaks you're missing, and research current rates and rules on the web.
-          It sticks to money topics only. Connect with your own Anthropic API key; your data is sent only when
-          you ask a question.
+          It sticks to money topics only. Your data is sent only when you ask a question.
         </p>
-        <ol className="how-to small">
-          <li>
-            <strong>Create an API key</strong> at{' '}
-            <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com/settings/keys</a>{' '}
-            (starts <code>sk-ant-api…</code>) and add a few dollars of credit — a typical question costs a few
-            cents on Opus, less on Haiku.
-          </li>
-          <li>
-            <strong>Paste it below</strong> and pick a model. Heads-up: Claude Pro/Max subscriptions can’t be
-            used here — tokens from <code>claude setup-token</code> only work inside Claude Code itself, and
-            Anthropic’s API rejects them from any other app.
-          </li>
-        </ol>
-        <div className="row gap wrap">
-          <input
-            className="mono"
-            style={{ flex: '1 1 260px' }}
-            value={tokenInput}
-            onChange={e => setTokenInput(e.target.value)}
-            placeholder="Paste sk-ant-api… key"
-            aria-label="Anthropic API key"
-          />
+        <div className="row gap wrap" style={{ marginBottom: 8 }}>
           <select value={model} aria-label="Model" onChange={e => setModel(e.target.value)}>
             {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
-          <button className="btn primary" onClick={connect} disabled={!tokenInput.trim()}>Connect</button>
         </div>
+        <ol className="how-to small">
+          <li>
+            <strong>Use your Claude subscription (Pro/Max) — no extra cost.</strong> Questions run through{' '}
+            <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a> on your own
+            computer via a small bridge script:{' '}
+            <a href="/budgie-bridge.py" download>download budgie-bridge.py</a>, then in Terminal run{' '}
+            <code>python3 ~/Downloads/budgie-bridge.py</code> and keep that window open.{' '}
+            <button className="btn primary small" onClick={connectBridge} disabled={probing}>
+              {probing ? 'Looking for bridge…' : 'Use my Claude subscription'}
+            </button>
+          </li>
+          <li>
+            <strong>Or use an API key</strong> from{' '}
+            <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com/settings/keys</a>{' '}
+            (starts <code>sk-ant-api…</code>, pay-as-you-go — works anywhere, no bridge needed):
+            <span className="row gap wrap" style={{ display: 'flex', marginTop: 6 }}>
+              <input
+                className="mono"
+                style={{ flex: '1 1 220px' }}
+                value={tokenInput}
+                onChange={e => setTokenInput(e.target.value)}
+                placeholder="Paste sk-ant-api… key"
+                aria-label="Anthropic API key"
+              />
+              <button className="btn small" onClick={connect} disabled={!tokenInput.trim()}>Connect key</button>
+            </span>
+          </li>
+        </ol>
         {setupError && <p className="error small">{setupError}</p>}
         <div className="trust-note">
           <Icon name="lock" size={12} /> Stored only in this browser. When you ask a question, a compact summary
@@ -213,7 +240,7 @@ export default function AskAdvisor() {
         <h2 style={{ margin: 0 }}>
           <span className="icon-chip"><Icon name="sparkle" /></span>
           Ask Claude
-          <span className="badge">API credits</span>
+          <span className="badge">{conn.token === 'bridge' ? 'your Claude plan' : 'API credits'}</span>
         </h2>
         <div className="row gap">
           {chat.length > 0 && (
