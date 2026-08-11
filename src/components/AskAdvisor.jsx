@@ -71,23 +71,23 @@ export default function AskAdvisor() {
     toast('Connected — the advisor is ready', { kind: 'good' })
   }
 
+  const [bridgeFail, setBridgeFail] = useState(false)
+
   const connectBridge = async () => {
     setProbing(true)
     setSetupError('')
+    setBridgeFail(false)
     const health = await bridgeHealth()
     setProbing(false)
     if (!health) {
-      setSetupError(
-        'No bridge found on this computer. Make sure `python3 budgie-bridge.py` is running ' +
-        'in a terminal window, then try again. (Safari blocks localhost from web pages — ' +
-        'use Chrome, Edge, Arc, or Firefox for the subscription option.)',
-      )
+      setBridgeFail(true) // rendered as a step-by-step diagnosis block below
       return
     }
     if (!health.ok) {
       setSetupError('The bridge is running but couldn’t find Claude Code. Install it from claude.com/claude-code, run `claude` once to log in, then restart the bridge.')
       return
     }
+    setBridgeFail(false)
     dispatch({ type: 'SET_CONNECTION', payload: { kind: 'claude', value: { token: 'bridge', model } } })
     toast('Connected — the advisor runs on your Claude plan', { kind: 'good' })
   }
@@ -203,7 +203,9 @@ export default function AskAdvisor() {
             <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a> on your own
             computer via a small bridge script:{' '}
             <a href="/budgie-bridge.py" download>download budgie-bridge.py</a>, then in Terminal run{' '}
-            <code>python3 ~/Downloads/budgie-bridge.py</code> and keep that window open.{' '}
+            <code>python3 ~/Downloads/budgie-bridge.py</code> and keep that window open. If your browser asks
+            to “access devices on your local network”, choose <strong>Allow</strong> — that’s this page talking
+            to the bridge.{' '}
             <button className="btn primary small" onClick={connectBridge} disabled={probing}>
               {probing ? 'Looking for bridge…' : 'Use my Claude subscription'}
             </button>
@@ -226,6 +228,26 @@ export default function AskAdvisor() {
           </li>
         </ol>
         {setupError && <p className="error small">{setupError}</p>}
+        {bridgeFail && (
+          <div className="error small">
+            <p style={{ marginTop: 0 }}><strong>Couldn’t reach the bridge from this page.</strong> Two quick checks:</p>
+            <ol style={{ margin: '4px 0', paddingLeft: 18 }}>
+              <li>
+                Open{' '}
+                <a href="http://127.0.0.1:8765/health" target="_blank" rel="noreferrer">http://127.0.0.1:8765/health</a>{' '}
+                in a new tab. No “ok” there? The bridge isn’t running — start it with{' '}
+                <code>python3 ~/Downloads/budgie-bridge.py</code> and keep the window open.
+              </li>
+              <li>
+                If that tab <em>does</em> show “ok”, your browser is blocking this page from reaching it.
+                Look for a permission prompt or a blocked icon near the address bar — Chrome asks to
+                “access devices on your local network”; choose <strong>Allow</strong>, then hit the button
+                again (it waits up to 15 seconds for you to answer the prompt). Safari never allows this —
+                use Chrome, Edge, Arc, or Firefox for the subscription option.
+              </li>
+            </ol>
+          </div>
+        )}
         <div className="trust-note">
           <Icon name="lock" size={12} /> Stored only in this browser. When you ask a question, a compact summary
           of your finances goes to Anthropic to answer it — nothing is sent otherwise.
