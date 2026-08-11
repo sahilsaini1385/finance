@@ -45,11 +45,18 @@ const BRIDGE_DOWN_MSG =
   'still running in a terminal window? Start it and try again.'
 
 // Probes the local bridge. Returns its health JSON, or null when unreachable.
+// The timeout is generous on purpose: on first use Chrome shows a "wants to
+// access devices on your local network" permission prompt and holds the fetch
+// until the user answers — aborting early turns an Allow click into a failure.
 export async function bridgeHealth() {
   try {
     const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 2500)
-    const res = await fetch(`${BRIDGE_URL}/health`, { signal: ctrl.signal })
+    const t = setTimeout(() => ctrl.abort(), 15000)
+    const res = await fetch(`${BRIDGE_URL}/health`, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+      targetAddressSpace: 'loopback', // Chromium opt-in for https-page → http-loopback fetches
+    })
     clearTimeout(t)
     const j = await res.json()
     return j && j.bridge === 'budgie' ? j : null
@@ -70,6 +77,8 @@ async function streamBridge({ model, system, messages, onText, signal }) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ system: systemText, messages, model: model || DEFAULT_MODEL }),
       signal,
+      cache: 'no-store',
+      targetAddressSpace: 'loopback',
     })
   } catch (err) {
     if (signal?.aborted) throw err
