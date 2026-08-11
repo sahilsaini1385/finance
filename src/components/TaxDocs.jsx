@@ -114,8 +114,8 @@ export default function TaxDocs() {
     <div className="page">
       <h1>Taxes</h1>
       <p className="muted small">
-        Keep W-2s, 1099s, and filing paperwork in one place. Enter the key W-2 boxes and the Advisor
-        reviews your withholding and retirement deferrals automatically.
+        Keep W-2s, 1099s, and filing paperwork in one place. Drop in a W-2 PDF and the box figures read
+        themselves — the Advisor then reviews your withholding and retirement deferrals for that tax year.
       </p>
 
       <div className="grid-2-forms" style={{ marginTop: 16 }}>
@@ -150,7 +150,7 @@ export default function TaxDocs() {
             <div className="empty" style={{ padding: '20px 8px' }}>
               <Icon name="file-text" />
               <strong>No W-2 figures yet</strong>
-              <span className="small">Upload a W-2 and fill in its key boxes below — the Advisor estimates your refund/balance due and checks your 401(k) and HSA deferrals against the limits.</span>
+              <span className="small">Drop in a W-2 PDF and the boxes read themselves — the Advisor then estimates your refund/balance due and checks your 401(k) and HSA deferrals against that year's limits.</span>
             </div>
           ) : (
             <>

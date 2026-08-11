@@ -40,6 +40,7 @@ export default function AskAdvisor() {
   const toast = useToast()
   const conn = state.connections?.claude || null
   const [tokenInput, setTokenInput] = useState('')
+  const [setupOpen, setSetupOpen] = useState(false)
   const [model, setModel] = useState(conn?.model || DEFAULT_MODEL)
   const [question, setQuestion] = useState('')
   const [streaming, setStreaming] = useState(null) // partial assistant text while a turn runs
@@ -119,10 +120,29 @@ export default function AskAdvisor() {
     [state.accounts.length],
   )
 
+  if (!conn && !setupOpen) {
+    // Compact teaser — the full setup instructions only unfold on request,
+    // so an unconnected AI card doesn't push real advice below the fold.
+    return (
+      <div className="card">
+        <div className="row gap wrap" style={{ alignItems: 'center' }}>
+          <h2 style={{ margin: 0, flex: '1 1 260px' }}>
+            <span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances
+          </h2>
+          <span className="small muted">Chat with an AI that sees your full picture — runs on your own Claude plan.</span>
+          <button className="btn primary" onClick={() => setSetupOpen(true)}>Set up</button>
+        </div>
+      </div>
+    )
+  }
+
   if (!conn) {
     return (
       <div className="card">
-        <h2><span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances</h2>
+        <div className="page-head" style={{ marginBottom: 0 }}>
+          <h2 style={{ margin: 0 }}><span className="icon-chip"><Icon name="sparkle" /></span> Ask Claude about your finances</h2>
+          <button className="btn ghost small" onClick={() => setSetupOpen(false)}>Hide</button>
+        </div>
         <p className="muted small">
           Chat with a Claude model that can see your whole financial picture — budget, taxes, retirement outlook,
           insurance, goals — hunt down tax breaks you're missing, and research current rates and rules on the web.

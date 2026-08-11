@@ -7,6 +7,14 @@ import { detectRecurring, upcomingBills } from '../lib/savings.js'
 import { txParts } from '../lib/tx.js'
 import ConflictBanner from './ConflictBanner.jsx'
 import Icon from './Icon.jsx'
+
+// Cut preview text at a word boundary — mid-word cuts ("(avalan…") read broken.
+function truncateAtWord(s, max) {
+  if (!s || s.length <= max) return s
+  const cut = s.slice(0, max)
+  const at = cut.lastIndexOf(' ')
+  return (at > max * 0.6 ? cut.slice(0, at) : cut).replace(/[,;:.]$/, '') + '…'
+}
 import AreaChart from './AreaChart.jsx'
 
 function monthKey(dateStr) {
@@ -203,7 +211,7 @@ export default function Dashboard({ onNavigate }) {
         <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
           <div className="stat-label">Debt</div>
-          <div className="stat-value money">{hasAccounts ? (totals.debt > 0 ? '−' + fmt(Math.round(debt)) : fmt(0)) : '—'}</div>
+          <div className="stat-value money">{hasAccounts ? fmt(Math.round(debt)) : '—'}</div>
           <div className="stat-sub">{accountCount(['credit card', 'loan', 'mortgage'])} accounts</div>
         </div>
       </div>
@@ -218,7 +226,7 @@ export default function Dashboard({ onNavigate }) {
               </span>
               <div>
                 <strong>{r.title}</strong>
-                <div className="rec-detail">{r.detail.slice(0, 140)}{r.detail.length > 140 ? '…' : ''}</div>
+                <div className="rec-detail">{truncateAtWord(r.detail, 140)}</div>
               </div>
             </div>
           ))}
