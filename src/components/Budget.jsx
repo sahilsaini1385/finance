@@ -397,6 +397,14 @@ export default function Budget() {
             {sts.perDay !== null && sts.safe > 0 ? `≈ ${fmt(sts.perDay)}/day for ${daysLeft} days · ` : ''}
             income basis: {sts.income.basis === 'target' ? 'your target' : sts.income.basis}
           </div>
+          <div className="stat-sub money" style={{ marginTop: 6, lineHeight: 1.5 }} title="Fixed bills count the larger of budget vs. what already ran — a bill that ran high is reality, one not yet paid is still owed.">
+            {fmt(sts.income.value)} income
+            {sts.sinking > 0 && <> − {fmt(sts.sinking)} set-asides</>}
+            {' '}− {fmt(sts.fixedCommitted)} fixed bills{sts.fixedCommitted > sts.fixedBudgeted ? '*' : ''}
+            {' '}− {fmt(sts.flexSpent)} flexible spent
+            {' '}= <strong style={sts.safe < 0 ? { color: 'var(--critical)' } : undefined}>{sts.safe < 0 ? '−' : ''}{fmt(Math.abs(sts.safe))}</strong>
+            {sts.fixedCommitted > sts.fixedBudgeted && <span className="muted"> · *includes bills that ran over their budget</span>}
+          </div>
         </div>
         <div className="stat-tile" style={{ cursor: 'default' }}>
           <div className="stat-label">Fixed bills</div>
