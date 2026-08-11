@@ -10,6 +10,7 @@ import AskAdvisor from './AskAdvisor.jsx'
 import ConflictBanner from './ConflictBanner.jsx'
 
 const SEV_ICON = { critical: 'octagon-alert', warning: 'alert-triangle', info: 'lightbulb', good: 'check-circle' }
+const SEV_ORDER = { critical: 0, warning: 1, info: 2, good: 3 }
 const AREAS = [
   ['savings', 'Where you can save'],
   ['tax', 'Tax management'],
@@ -45,6 +46,9 @@ export default function Advisor() {
   const setP = payload => dispatch({ type: 'SET_PROFILE', payload })
   const savings = useMemo(() => getSavingsInsights(state), [state.transactions])
   const recs = [...savings.recs, ...getRecommendations(state)]
+  const urgent = recs
+    .filter(r => r.severity === 'critical' || r.severity === 'warning')
+    .sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity])
   const totals = computeTotals(state)
   const fi = projectFI(state, totals.investments)
 
@@ -70,6 +74,42 @@ export default function Advisor() {
       <AskAdvisor />
 
       <ConflictBanner surface="advisor" />
+
+      {urgent.length > 0 && (
+        <div className="card">
+          <h2><span className="sev-chip warning"><Icon name="alert-triangle" size={14} /></span> Top priorities ({urgent.length})</h2>
+          <p className="muted small">The items most worth acting on, across every area — details repeat in their sections below.</p>
+          {urgent.slice(0, 6).map(r => (
+            <div key={`top-${r.id}`} className={`alert ${r.severity}`}>
+              <span className="alert-icon"><Icon name={SEV_ICON[r.severity]} size={15} /></span>
+              <div>
+                <strong>{r.title}</strong>
+                <span className="badge" style={{ marginLeft: 8 }}>{(AREAS.find(([a]) => a === r.area) || [null, r.area])[1]}</span>
+              </div>
+            </div>
+          ))}
+          {urgent.length > 6 && <p className="muted small" style={{ marginBottom: 0 }}>…and {urgent.length - 6} more below.</p>}
+        </div>
+      )}
+
+      {AREAS.map(([area, title]) => {
+        const items = recs.filter(r => r.area === area).sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity])
+        if (items.length === 0) return null
+        return (
+          <div className="card" key={area}>
+            <h2>{title}</h2>
+            {items.map(r => (
+              <div key={r.id} className={`alert ${r.severity}`}>
+                <span className="alert-icon"><Icon name={SEV_ICON[r.severity]} size={15} /></span>
+                <div>
+                  <strong>{r.title}</strong>
+                  <div className="rec-detail">{r.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })}
 
       {savings.recurring.length > 0 && (
         <div className="card">
@@ -108,25 +148,6 @@ export default function Advisor() {
           </table>
         </div>
       )}
-
-      {AREAS.map(([area, title]) => {
-        const items = recs.filter(r => r.area === area)
-        if (items.length === 0) return null
-        return (
-          <div className="card" key={area}>
-            <h2>{title}</h2>
-            {items.map(r => (
-              <div key={r.id} className={`alert ${r.severity}`}>
-                <span className="alert-icon"><Icon name={SEV_ICON[r.severity]} size={15} /></span>
-                <div>
-                  <strong>{r.title}</strong>
-                  <div className="rec-detail">{r.detail}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      })}
 
       <div className="card">
         <details className="advanced" open={answered < 7}>

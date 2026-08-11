@@ -739,6 +739,9 @@ textarea:focus-visible {
 }
 .table .desc {
   max-width: 340px;
+  /* min-width forces the table to scroll on narrow screens instead of
+     squeezing descriptions into one-letter-per-line columns. */
+  min-width: 150px;
   overflow-wrap: anywhere;
 }
 .table tfoot td {
