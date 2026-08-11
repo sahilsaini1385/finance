@@ -376,6 +376,47 @@ const DEDUCTION_MAP = [
   ['ad&d', /\bad\s?[/&]?\s?d\b|supp\.? ?ad/i],
   ['legal', /legal/i],
 ]
+// Coverage for salary-multiple policies, re-derived from the CURRENT base
+// salary instead of frozen import-time dollars. The multiple comes from the
+// persisted salaryMultiple field, or the policy name ("… — 5× base salary")
+// for policies imported before the field existed. Spouse policies are never
+// derived from the employee's salary. Falls back to the stored amount.
+const NAME_MULTIPLE_RE = /(\d+(?:\.\d+)?)\s*×\s*base salary/i
+export function policyCoverage(state, policy) {
+  const stored = num(policy.coverageAmount)
+  const isSpouse = /spouse|partner/i.test(policy.policyName || '')
+  // salaryMultiple (import-managed) always re-derives; a multiple that only
+  // lives in the policy NAME derives only when no exact amount was entered —
+  // a typed coverage figure must win over a name-parsed estimate.
+  const multiple = num(policy.salaryMultiple) || (stored === 0 ? num((policy.policyName || '').match(NAME_MULTIPLE_RE)?.[1]) : 0)
+  if (!isSpouse && multiple > 0) {
+    const { facts } = resolveFacts(state)
+    if (facts.baseSalary?.value > 0) {
+      return {
+        value: Math.round(multiple * facts.baseSalary.value),
+        estimated: true,
+        basis: `${multiple}× ${facts.baseSalary.source.origin === 'payroll' ? 'payroll base salary' : 'estimated salary'}`,
+      }
+    }
+  }
+  return stored > 0 ? { value: stored, estimated: false, basis: 'entered amount' } : null
+}
+
+// Is this policy actually enrolled? Two kinds of evidence:
+//   'payroll'   — its premium shows up as a deduction on the latest paystub
+//   'statement' — imported as employer-paid from the benefits statement
+export function enrollmentEvidence(state, policy) {
+  const prem = policyPremiumAnnual(state, policy)
+  if (prem?.origin === 'payroll') return 'payroll'
+  const year = localMonth().slice(0, 4)
+  const payroll = payrollTrusted(state, year)
+  if (payroll && policy.type === 'life' && /spouse|partner/i.test(policy.policyName || '')) {
+    if ((payroll.latest.deductions || []).some(d => /slifsp|spouse.{0,6}life/i.test(d.label))) return 'payroll'
+  }
+  if (/employer.?paid/i.test(policy.notes || '')) return 'statement'
+  return null
+}
+
 export function policyPremiumAnnual(state, policy) {
   const declared = num(policy.premium) * (policy.premiumFreq === 'month' ? 12 : 1)
   const year = localMonth().slice(0, 4)
