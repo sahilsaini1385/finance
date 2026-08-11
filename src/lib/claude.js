@@ -3,13 +3,15 @@
 // browser, with the same-origin /api/claude proxy as a CORS fallback — the
 // same transport-chain pattern the SimpleFIN integration uses.
 //
-// Two credential kinds, auto-detected by prefix:
-//   sk-ant-oat...  OAuth token (from `claude setup-token`) — billed to the
-//                  user's Claude subscription plan. Sent as Authorization:
-//                  Bearer + the `anthropic-beta: oauth-2025-04-20` header.
-//   sk-ant-api...  Console API key — pay-as-you-go credits. Sent as x-api-key.
+// Credentials: a Console API key (sk-ant-api..., pay-as-you-go), sent as
+// x-api-key. Claude-subscription OAuth tokens (sk-ant-oat..., from
+// `claude setup-token`) are detected only to be REJECTED with guidance:
+// Anthropic's Messages API does not accept them — they work solely inside
+// Claude Code / the Claude Agent SDK, and Anthropic has declined to change
+// that (anthropics/claude-code#37205, closed not-planned). No header
+// combination makes them work here.
 //
-// The token lives only in this browser's localStorage and is sent only to
+// The key lives only in this browser's localStorage and is sent only to
 // Anthropic (or the stateless same-origin proxy that forwards to Anthropic).
 
 export const DEFAULT_MODEL = 'claude-opus-5'
@@ -23,20 +25,20 @@ export function tokenKind(token) {
   return String(token || '').startsWith('sk-ant-oat') ? 'oauth' : 'apikey'
 }
 
+export const OAUTH_TOKEN_MSG =
+  'That’s a Claude Code token (sk-ant-oat…). Anthropic’s API only accepts those ' +
+  'inside Claude Code itself — no app can use them, so subscription usage can’t be ' +
+  'shared here. Create an API key at platform.claude.com/settings/keys ' +
+  '(starts sk-ant-api…, pay-as-you-go) and connect with that instead.'
+
 async function makeClient(token, { viaProxy = false } = {}) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const opts = {
+    apiKey: token,
     dangerouslyAllowBrowser: true, // key stays user-side by design: local-first app
     maxRetries: 1,
   }
   if (viaProxy) opts.baseURL = `${window.location.origin}/api/claude`
-  if (tokenKind(token) === 'oauth') {
-    opts.apiKey = null
-    opts.authToken = token
-    opts.defaultHeaders = { 'anthropic-beta': 'oauth-2025-04-20' }
-  } else {
-    opts.apiKey = token
-  }
   return new Anthropic(opts)
 }
 
@@ -47,6 +49,9 @@ const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_u
 // (some credential types don't allow server tools). onText receives text
 // deltas; resolves with the final assistant text.
 export async function streamAdvice({ token, model, system, messages, onText, signal }) {
+  // Guard for connections stored before the app learned these can't work —
+  // fail with the real explanation instead of a misleading 401 from Anthropic.
+  if (tokenKind(token) === 'oauth') throw new Error(OAUTH_TOKEN_MSG)
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const attempts = [
     { viaProxy: false, tools: true },
@@ -84,11 +89,7 @@ export async function streamAdvice({ token, model, system, messages, onText, sig
       lastErr = err
       // Auth problems won't be fixed by another transport — surface them now.
       if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-        throw new Error(
-          tokenKind(token) === 'oauth'
-            ? 'Anthropic rejected the token. OAuth tokens expire — run `claude setup-token` again and paste the fresh one.'
-            : 'Anthropic rejected the API key. Check it in the Anthropic Console.',
-        )
+        throw new Error('Anthropic rejected the API key. Check it (and your credit balance) at platform.claude.com/settings/keys.')
       }
       if (err instanceof Anthropic.RateLimitError) {
         throw new Error('Rate limited by your Anthropic plan — wait a minute and try again.')
