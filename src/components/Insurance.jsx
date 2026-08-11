@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { oopStatus } from '../lib/health.js'
-import { policyPremiumAnnual } from '../lib/facts.js'
+import { policyPremiumAnnual, policyCoverage, enrollmentEvidence } from '../lib/facts.js'
 import { localToday } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -275,12 +275,35 @@ export default function Insurance() {
               <tr><th>Type</th><th>Provider</th><th>Policy</th><th className="num">Coverage</th><th className="num">Premium</th><th className="num">Deductible</th><th>Renews</th><th></th></tr>
             </thead>
             <tbody>
-              {state.insurance.map(p => (
+              {state.insurance.map(p => {
+                const cov = policyCoverage(state, p)
+                const enrolled = enrollmentEvidence(state, p)
+                return (
                 <tr key={p.id}>
                   <td>{p.type}</td>
                   <td>{p.provider || '—'}</td>
-                  <td className="desc small">{p.policyName || '—'}</td>
-                  <td className="num">{fmt(p.coverageAmount)}</td>
+                  <td className="desc small">
+                    {p.policyName || '—'}
+                    {enrolled && (
+                      <span
+                        className="delta-chip"
+                        style={{ marginLeft: 6, verticalAlign: 1 }}
+                        title={enrolled === 'payroll'
+                          ? 'Enrolled — this premium shows up in your paycheck deductions'
+                          : 'Enrolled — employer-paid per your benefits statement'}
+                      >
+                        ✓ enrolled{enrolled === 'payroll' ? ' · payroll' : ''}
+                      </span>
+                    )}
+                  </td>
+                  <td className="num">
+                    {cov ? (
+                      <span title={cov.estimated ? `Estimated: ${cov.basis}` : undefined}>
+                        {cov.estimated ? '~' : ''}{fmt(cov.value)}
+                        {cov.estimated && <div className="small muted" style={{ fontWeight: 400 }}>{cov.basis}</div>}
+                      </span>
+                    ) : '—'}
+                  </td>
                   <td className="num">{fmt(p.premium)} / {p.premiumFreq}</td>
                   <td className="num">{fmt(p.deductible)}</td>
                   <td className="small">{p.renewalDate || '—'}</td>
@@ -291,9 +314,16 @@ export default function Insurance() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
+          {state.insurance.some(p => policyCoverage(state, p)?.estimated) && (
+            <p className="muted small" style={{ marginBottom: 0 }}>
+              ~ Coverage estimated from your payroll-verified base salary for salary-multiple policies — it
+              updates automatically as your pay changes. Enter an exact amount on the policy to override.
+            </p>
+          )}
         </div>
       )}
     </div>

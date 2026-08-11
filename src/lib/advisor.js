@@ -6,7 +6,7 @@ import { txParts } from './tx.js'
 import { oopStatus } from './health.js'
 import { paystubYearSummary } from './income.js'
 import { LIMITS_BY_YEAR, TAX_TABLES_BY_YEAR, CURRENT_TAX_YEAR, limitsFor, estimateFederalTax } from './taxTables.js'
-import { resolveFacts, policyPremiumAnnual, toleranceFor } from './facts.js'
+import { resolveFacts, policyPremiumAnnual, policyCoverage, toleranceFor } from './facts.js'
 import { buildTaxSummary } from './report.js'
 
 // Back-compat re-exports — tables now live year-keyed in taxTables.js.
@@ -51,10 +51,12 @@ export function computeTotals(state) {
   return { cash, investments, debt, other, netWorth: cash + investments + other - debt }
 }
 
+// Salary-multiple policies re-derive from the current base salary (see
+// facts.policyCoverage), so DIME and AD&D checks self-heal as pay changes.
 function coverageOf(state, kind) {
   return state.insurance
     .filter(p => p.type === kind)
-    .reduce((s, p) => s + num(p.coverageAmount), 0)
+    .reduce((s, p) => s + (policyCoverage(state, p)?.value || 0), 0)
 }
 
 // Returns [{id, area: 'tax'|'insurance'|'planning', severity: 'good'|'info'|'warning'|'critical', title, detail}]

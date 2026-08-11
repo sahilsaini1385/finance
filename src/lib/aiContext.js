@@ -17,6 +17,7 @@ import { localMonth } from './dates.js'
 import { oopStatus } from './health.js'
 import { paystubYearSummary } from './income.js'
 import { goalPace } from './goals.js'
+import { policyCoverage, enrollmentEvidence } from './facts.js'
 import { projectFI } from './projection.js'
 
 const r0 = n => Math.round(Number(n) || 0)
@@ -93,8 +94,13 @@ export function buildFinancialContext(state) {
       }
     })(),
     insurance: (state.insurance || []).map(p => {
+      const cov = policyCoverage(state, p)
+      const enrolled = enrollmentEvidence(state, p)
       const base = {
-        type: p.type, provider: p.provider, coverage: r0(p.coverageAmount),
+        type: p.type, provider: p.provider,
+        coverage: cov ? r0(cov.value) : 0,
+        ...(cov?.estimated ? { coverageBasis: cov.basis } : {}),
+        ...(enrolled ? { enrolled: enrolled === 'payroll' ? 'verified in payroll' : 'employer-paid per benefits statement' } : {}),
         premium: r0(p.premium), per: p.premiumFreq, renews: p.renewalDate || null,
       }
       if (p.type === 'health') {
