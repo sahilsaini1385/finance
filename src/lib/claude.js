@@ -75,7 +75,7 @@ async function streamBridge({ model, system, messages, onText, signal }) {
     res = await fetch(`${BRIDGE_URL}/advice`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ system: systemText, messages, model: model || DEFAULT_MODEL }),
+      body: JSON.stringify({ provider: 'claude', system: systemText, messages, model: model || DEFAULT_MODEL }),
       signal,
       cache: 'no-store',
       targetAddressSpace: 'loopback',

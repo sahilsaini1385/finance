@@ -43,6 +43,13 @@ Key properties:
   It forwards to allow-listed SimpleFIN hosts only and stores nothing.
 - **Pure cores.** `csv.js`, `sync.js`, `categorize.js`, `advisor.js` are pure functions with no I/O or
   DOM access — they can run unchanged in a server or worker.
+- **AI advisor is provider-pluggable.** The "Ask Budgie" chat UI is provider-agnostic and reads
+  everything (branding, models, credential rules, transports) from a registry in `providers.js`;
+  `claude.js` is the one registered implementation. Subscription plans that vendors refuse to expose
+  through their raw APIs ride a local bridge instead (`public/budgie-bridge.py`, run by the user,
+  loopback-only) that drives the vendor's own CLI headlessly — the bridge protocol carries a
+  `provider` field so ChatGPT (codex CLI) or Gemini (gemini CLI) can be added the same way without
+  touching the UI. Chat history is stored provider-neutral (`{role, content}`).
 
 ## Data model (one JSON document)
 

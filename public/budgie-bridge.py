@@ -118,11 +118,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
             req = json.loads(self.rfile.read(length) or b"{}")
+            provider = str(req.get("provider", "claude"))
             system = str(req.get("system", ""))
             messages = req.get("messages") or []
             model = str(req.get("model", "opus"))
         except (ValueError, TypeError):
             return self._json(400, {"error": "bad request body"})
+        # The protocol carries a provider so other subscription CLIs (codex,
+        # gemini, ...) can be driven from this same bridge someday.
+        if provider != "claude":
+            return self._json(400, {"error": f"This bridge only speaks to Claude Code for now (got provider '{provider}')"})
 
         cmd = [
             CLAUDE, "-p", transcript(messages),
