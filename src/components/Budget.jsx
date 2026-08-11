@@ -485,9 +485,10 @@ export default function Budget() {
           <table className="table">
             <tbody>
               {needsReview.slice(0, 6).map(t => (
-                <tr key={t.id}>
+                <tr key={t.id} title={accountName(t.accountId) ? `From ${accountName(t.accountId)}${t.source ? ` · via ${t.source}` : ''}` : undefined}>
                   <td className="small nowrap">{t.date}</td>
                   <td className="desc small">{t.description}</td>
+                  <td className="small muted nowrap">{accountName(t.accountId) || '—'}</td>
                   <td className="num">{fmt(-t.amount)}</td>
                   <td className="row-actions" style={{ opacity: 1 }}>
                     <select defaultValue="" aria-label="Categorize" onChange={e => e.target.value && reviewTx(t, e.target.value)}>
