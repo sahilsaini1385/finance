@@ -224,6 +224,7 @@ export default function Budget() {
           key: `${t.id}-${p === t ? 'full' : p.id || rows.length}`,
           date: t.date, description: t.description, amount: p.amount, split: p !== t,
           account: accountName(t.accountId),
+          tx: p === t ? t : null, // whole transactions can be recategorized inline; split parts can't
         })
       }
     }
@@ -326,6 +327,19 @@ export default function Budget() {
                           <td className="small muted">{r.account}</td>
                           <td className="num small" style={r.amount > 0 ? { color: 'var(--good-text)' } : undefined}>
                             {r.amount > 0 ? `+${fmt(r.amount)} refund` : fmt(-r.amount)}
+                          </td>
+                          <td className="row-actions" style={{ opacity: 1 }}>
+                            {r.tx ? (
+                              <select
+                                value={cat}
+                                aria-label={`Category for ${r.description}`}
+                                onChange={e => e.target.value !== cat && reviewTx(r.tx, e.target.value)}
+                              >
+                                {allCategories(state).map(c => <option key={c}>{c}</option>)}
+                              </select>
+                            ) : (
+                              <span className="small muted" title="Split parts are edited on the Transactions tab">split</span>
+                            )}
                           </td>
                         </tr>
                       ))}
