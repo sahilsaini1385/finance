@@ -647,6 +647,20 @@ textarea:focus-visible {
 .btn:active {
   transform: translateY(1px) scale(0.99);
 }
+/* Disabled buttons must LOOK disabled — greyed out, no hover/press feedback. */
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.btn:disabled:hover {
+  background: var(--surface);
+}
+.btn:disabled:active {
+  transform: none;
+}
+.btn.primary:disabled:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 10%, var(--accent)), var(--accent));
+}
 .btn.primary {
   background: linear-gradient(180deg, color-mix(in srgb, #fff 10%, var(--accent)), var(--accent));
   border-color: var(--accent);
