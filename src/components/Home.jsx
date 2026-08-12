@@ -178,6 +178,16 @@ export default function Home() {
           </label>
           <label>Mortgage balance
             <span className="input-money"><input type="number" inputMode="decimal" value={home.mortgageBalance} onChange={e => setHome({ mortgageBalance: e.target.value })} /></span>
+            {!num(home.mortgageBalance) && (() => {
+              const m = state.accounts.filter(a => a.type === 'mortgage')
+              const bal = Math.round(m.reduce((s, a) => s + Math.abs(num(a.balance)), 0))
+              return bal > 0 ? (
+                <span className="small muted" style={{ display: 'block', marginTop: 3 }}>
+                  From your data: {fmt(bal)} — linked mortgage account{' '}
+                  <button type="button" className="btn ghost small" style={{ padding: '0 8px' }} onClick={() => setHome({ mortgageBalance: String(bal) })}>Use</button>
+                </span>
+              ) : null
+            })()}
           </label>
           <label>Interest rate (%)
             <input type="number" step="0.001" inputMode="decimal" value={home.mortgageRate} onChange={e => setHome({ mortgageRate: e.target.value })} />

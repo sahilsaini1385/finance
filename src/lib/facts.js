@@ -40,6 +40,7 @@ const TOLERANCES = {
   deferralRatePts: { abs: 1.5, rel: 0 },
   employerMatch: { abs: 1000, rel: 0.25 },
   incomeTargetVsPaystub: { abs: 250, rel: 0.10 },
+  hsaContribution: { abs: 300, rel: 0.10 },
 }
 export function toleranceFor(id) {
   return TOLERANCES[id] || { abs: 100, rel: 0.02 }
@@ -178,6 +179,28 @@ function resolve(state) {
           { origin: 'typed', label: 'Planned (your estimate)', detail: 'profile', asOf: null }, { year: Number(year) })
       : null
   const hsaStatus = { eligibility, contribution: hsaContribution }
+  // Payroll contradicting an explicit "not eligible" answer is worth a flag —
+  // deductions can only ride an HSA-eligible plan. No one-click fix: whether
+  // the coverage is self-only or family is the user's to answer.
+  if (explicit === 'no' && payroll && payroll.ytd.hsa > 0) {
+    push({
+      factId: 'hsaStatus', severity: 'warning',
+      message: `Profile says no HSA-eligible coverage, but payroll shows ${fmtUsd(r0(payroll.ytd.hsa))} of HSA deductions this year. Set self-only or family in the Advisor profile so limit checks can run.`,
+      surfaces: ['advisor', 'ai'],
+    })
+  }
+  // Typed plan vs payroll pace drift (both known): payroll wins; offer sync.
+  if (num(p.hsaContribution) > 0 && payroll && payroll.ytd.hsa > 0) {
+    const hsaPace = r0(annualizeYtd(payroll.ytd.hsa, payroll.latest.payDate))
+    if (!withinTolerance('hsaContribution', hsaPace, num(p.hsaContribution))) {
+      push({
+        factId: 'hsaContribution', severity: 'notice',
+        message: `Planned HSA contribution (${fmtUsd(num(p.hsaContribution))}) is off payroll pace (~${fmtUsd(hsaPace)}/yr). Using payroll.`,
+        surfaces: ['advisor'],
+        fix: { label: 'Update planned HSA', dispatches: [{ action: 'SET_PROFILE', payload: { hsaContribution: String(hsaPace) } }], preview: { from: fmtUsd(num(p.hsaContribution)), to: fmtUsd(hsaPace) } },
+      })
+    }
+  }
 
   // ---- monthly living expenses (observed median beats stale estimate) ----
   const spendMonths = []
@@ -440,4 +463,45 @@ export function policyPremiumAnnual(state, policy) {
     }
   }
   return declared > 0 ? { value: declared, origin: 'policy', label: 'From policy entry', declared, drifted: false } : null
+}
+
+// Prefill suggestions for EMPTY Advisor-profile fields, drawn from data the
+// app already holds elsewhere (payroll, linked accounts, Home tab, goals).
+// Offered in the form as one-click fills — never auto-applied, same rule as
+// conflict fixes. Fields with a value are the drift-conflict system's job.
+export function profileSuggestions(state) {
+  const p = state.profile || {}
+  const { facts } = resolveFacts(state)
+  const out = []
+  const isEmpty = k => p[k] === '' || p[k] === null || p[k] === undefined
+  const add = (field, value, label) => out.push({ field, value: String(value), label })
+
+  if (isEmpty('grossIncome') && facts.grossIncome?.source?.origin === 'payroll') {
+    add('grossIncome', facts.grossIncome.value, `${fmtUsd(facts.grossIncome.value)} — payroll pace (Income tab)`)
+  }
+  if (isEmpty('monthlyExpenses') && facts.monthlyExpenses?.source?.origin === 'transactions') {
+    add('monthlyExpenses', facts.monthlyExpenses.value, `${fmtUsd(facts.monthlyExpenses.value)}/mo — your median spending`)
+  }
+  if (isEmpty('mortgageBalance') && facts.mortgageBalance) {
+    const src = facts.mortgageBalance.source
+    add('mortgageBalance', facts.mortgageBalance.value, `${fmtUsd(facts.mortgageBalance.value)} — ${src.detail || src.label}`)
+  }
+  if (isEmpty('otherDebt') && facts.nonMortgageDebt?.source?.origin === 'synced') {
+    add('otherDebt', facts.nonMortgageDebt.value, `${fmtUsd(facts.nonMortgageDebt.value)} — linked credit/loan accounts`)
+  }
+  if (isEmpty('k401ContributionPct') && facts.k401Deferrals?.source?.origin === 'payroll' && facts.baseSalary?.value > 0) {
+    const pct = Math.round((facts.k401Deferrals.pace / facts.baseSalary.value) * 1000) / 10
+    if (pct > 0) add('k401ContributionPct', pct, `${pct}% — implied by payroll deferrals vs base pay`)
+  }
+  if (isEmpty('hsaContribution') && facts.hsaStatus?.contribution?.source?.origin === 'payroll') {
+    const c = facts.hsaStatus.contribution
+    const pace = r0(annualizeYtd(c.value, c.source.asOf))
+    if (pace > 0) add('hsaContribution', pace, `${fmtUsd(pace)}/yr — payroll HSA pace`)
+  }
+  if (isEmpty('educationNeeds')) {
+    const g = (state.goals || []).find(g => /college|529|education|school|tuition/i.test(g.name || ''))
+    const target = g ? num(g.target) : 0
+    if (target > 0) add('educationNeeds', r0(target), `${fmtUsd(r0(target))} — “${g.name}” goal target`)
+  }
+  return out
 }

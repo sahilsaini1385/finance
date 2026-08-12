@@ -3,6 +3,7 @@ import { useStore, fmt } from '../store.jsx'
 import { getRecommendations, LIMITS_2026 } from '../lib/advisor.js'
 import { getSavingsInsights } from '../lib/savings.js'
 import { projectFI, FI_ASSUMPTIONS } from '../lib/projection.js'
+import { profileSuggestions } from '../lib/facts.js'
 import { computeTotals } from '../lib/advisor.js'
 import Icon from './Icon.jsx'
 import AreaChart from './AreaChart.jsx'
@@ -24,7 +25,7 @@ const PROFILE_FIELDS = [
   'hsaEligible', 'hsaContribution', 'iraContribution',
 ]
 
-function Field({ label, k, profile, onChange, money }) {
+function Field({ label, k, profile, onChange, money, suggest }) {
   const input = (
     <input
       type="number"
@@ -36,6 +37,14 @@ function Field({ label, k, profile, onChange, money }) {
   return (
     <label>{label}
       {money ? <span className="input-money">{input}</span> : input}
+      {suggest && (
+        <span className="small muted" style={{ display: 'block', marginTop: 3 }}>
+          From your data: {suggest.label}{' '}
+          <button type="button" className="btn ghost small" style={{ padding: '0 8px' }} onClick={() => onChange({ [k]: suggest.value })}>
+            Use
+          </button>
+        </span>
+      )}
     </label>
   )
 }
@@ -51,6 +60,14 @@ export default function Advisor() {
     .sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity])
   const totals = computeTotals(state)
   const fi = projectFI(state, totals.investments)
+
+  // Fields the rest of the app can answer — offered as one-click fills,
+  // never auto-written (same rule as conflict fixes).
+  const suggestions = useMemo(() => profileSuggestions(state), [state])
+  const sug = Object.fromEntries(suggestions.map(s => [s.field, s]))
+  const fillAll = () => {
+    setP(Object.fromEntries(suggestions.map(s => [s.field, s.value])))
+  }
 
   const answered = PROFILE_FIELDS.filter(k => {
     const v = p[k]
@@ -160,6 +177,18 @@ export default function Advisor() {
           <div className="trust-note" style={{ marginBottom: 12 }}>
             <Icon name="lock" size={12} /> Stays in your browser.
           </div>
+          {suggestions.length > 0 && (
+            <div className="alert info" style={{ marginBottom: 12 }}>
+              <span className="alert-icon"><Icon name="sparkle" size={15} /></span>
+              <div>
+                <strong>{suggestions.length} field{suggestions.length > 1 ? 's' : ''} can be filled from your data</strong>
+                <div className="rec-detail">Paystubs, linked accounts, the Home tab, and goals already answer some of these.</div>
+              </div>
+              <button className="btn primary small" style={{ marginLeft: 'auto', alignSelf: 'center' }} onClick={fillAll}>
+                Fill {suggestions.length}
+              </button>
+            </div>
+          )}
           <div className="form-grid">
             <Field label="Age" k="age" profile={p} onChange={setP} />
             <label>Filing status
@@ -169,23 +198,24 @@ export default function Advisor() {
                 <option value="hoh">Head of household</option>
               </select>
             </label>
-            <Field label="Your gross annual income" k="grossIncome" profile={p} onChange={setP} money />
+            <Field label="Your gross annual income" k="grossIncome" profile={p} onChange={setP} money suggest={sug.grossIncome} />
             <Field label="Spouse gross income" k="spouseIncome" profile={p} onChange={setP} money />
             <Field label="Dependents" k="dependents" profile={p} onChange={setP} />
-            <Field label="Monthly living expenses" k="monthlyExpenses" profile={p} onChange={setP} money />
-            <Field label="Mortgage balance" k="mortgageBalance" profile={p} onChange={setP} money />
-            <Field label="Other debt" k="otherDebt" profile={p} onChange={setP} money />
-            <Field label="Future education costs" k="educationNeeds" profile={p} onChange={setP} money />
-            <Field label="Your 401(k) contribution (% of salary)" k="k401ContributionPct" profile={p} onChange={setP} />
+            <Field label="Monthly living expenses" k="monthlyExpenses" profile={p} onChange={setP} money suggest={sug.monthlyExpenses} />
+            <Field label="Mortgage balance" k="mortgageBalance" profile={p} onChange={setP} money suggest={sug.mortgageBalance} />
+            <Field label="Other debt" k="otherDebt" profile={p} onChange={setP} money suggest={sug.otherDebt} />
+            <Field label="Future education costs" k="educationNeeds" profile={p} onChange={setP} money suggest={sug.educationNeeds} />
+            <Field label="Your 401(k) contribution (% of salary)" k="k401ContributionPct" profile={p} onChange={setP} suggest={sug.k401ContributionPct} />
             <Field label="Employer matches up to (%)" k="employerMatchPct" profile={p} onChange={setP} />
             <label>HDHP / HSA-eligible coverage?
               <select value={p.hsaEligible} onChange={e => setP({ hsaEligible: e.target.value })}>
+                <option value="">Not sure</option>
                 <option value="no">No</option>
                 <option value="self">Yes — self-only</option>
                 <option value="family">Yes — family</option>
               </select>
             </label>
-            <Field label="Planned HSA contribution this year" k="hsaContribution" profile={p} onChange={setP} money />
+            <Field label="Planned HSA contribution this year" k="hsaContribution" profile={p} onChange={setP} money suggest={sug.hsaContribution} />
             <Field label="Planned IRA contribution this year" k="iraContribution" profile={p} onChange={setP} money />
           </div>
         </details>
