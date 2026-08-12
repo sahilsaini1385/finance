@@ -18,9 +18,12 @@ const num = v => {
 export function amortizationSchedule(balance, annualRatePct, monthlyPayment, extra = 0) {
   const b0 = num(balance)
   const r = num(annualRatePct) / 100 / 12
-  const pay = num(monthlyPayment) + num(extra)
-  if (b0 <= 0 || pay <= 0) return { feasible: false, reason: 'missing figures' }
-  if (r > 0 && pay <= b0 * r) {
+  // extra may vary by payment number (scenario phases): pass a fn(n) → $.
+  const extraAt = typeof extra === 'function' ? extra : () => num(extra)
+  const basePay = num(monthlyPayment)
+  const payFor = n => basePay + Math.max(0, num(extraAt(n)))
+  if (b0 <= 0 || payFor(1) <= 0) return { feasible: false, reason: 'missing figures' }
+  if (r > 0 && payFor(1) <= b0 * r) {
     return { feasible: false, reason: 'payment does not cover interest — the balance would grow' }
   }
 
@@ -32,6 +35,7 @@ export function amortizationSchedule(balance, annualRatePct, monthlyPayment, ext
   const rows = []
   while (bal > 0 && rows.length < 600) {
     const n = rows.length + 1
+    const pay = payFor(n)
     const interest = bal * r
     const principal = Math.min(bal, pay - interest) // final month partial — never overpay
     cumInterest += interest

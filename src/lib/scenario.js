@@ -2,11 +2,16 @@
 // and compare the outcomes side by side. Pure functions; nothing here writes
 // state, and the page holds levers in component state only.
 //
+// Scenarios are TIME-BOXED: a scenario is a list of phases, each with its
+// own lever values and a duration in years ("Kathryn off for 2 years, then
+// back at 80%"). The last phase runs forever; if every explicit phase is
+// finite, life reverts to today's numbers afterward.
+//
 // The one modeling assumption (stated in the UI): changes to after-tax income
 // and spending FLOW THROUGH to investing — earn $1,000/mo less or spend
-// $1,000/mo more and your annual contributions drop by that much (never below
-// zero). Explicit "invest more" and "windfall" levers add on top. Taxes use
-// the rough federal estimate only.
+// $1,000/mo more during a phase and that phase's contributions drop by that
+// much (never below zero). Explicit "invest more" and "windfall" levers add
+// on top. Taxes use the rough federal estimate only.
 
 import { resolveFacts } from './facts.js'
 import { computeTotals } from './advisor.js'
@@ -34,7 +39,7 @@ export function seededRng(seed) {
 
 const MC_OPTS = { trials: 600 }
 
-// The current values each lever starts from (the form's prefill).
+// The current values each phase-lever starts from (the form's prefill).
 export function scenarioBaseline(state) {
   const p = state.profile || {}
   const r = state.retirement || {}
@@ -50,21 +55,39 @@ export function scenarioBaseline(state) {
   }
 }
 
-function fiFrom(age, investments, annualContrib, spendMonthly) {
-  const fiNumber = (spendMonthly * 12) / FI_ASSUMPTIONS.withdrawalRate
+// Normalize a phase list so it always ends with an infinite phase: if every
+// explicit phase is finite, life reverts to today's numbers afterward.
+function resolvePhases(phases, basePhase) {
+  const list = (phases || []).map(ph => ({ ...basePhase, ...ph, years: ph.years ? Math.max(1, Math.round(num(ph.years))) : null }))
+  if (list.length === 0 || list[list.length - 1].years !== null) list.push({ ...basePhase, years: null })
+  return list
+}
+
+// year (0-based from now) → phase
+function phaseAtYear(phases, y) {
+  let cum = 0
+  for (const ph of phases) {
+    if (ph.years === null || y < cum + ph.years) return ph
+    cum += ph.years
+  }
+  return phases[phases.length - 1]
+}
+
+function fiFrom(age, investments, contribForYear, tailSpendMonthly) {
+  const fiNumber = (tailSpendMonthly * 12) / FI_ASSUMPTIONS.withdrawalRate
   if (investments >= fiNumber) return { fiNumber, fiAge: age, alreadyThere: true }
   let portfolio = investments
   for (let y = 1; y <= FI_ASSUMPTIONS.maxYears; y++) {
-    portfolio = portfolio * (1 + FI_ASSUMPTIONS.realGrowth) + annualContrib
+    portfolio = portfolio * (1 + FI_ASSUMPTIONS.realGrowth) + contribForYear(y - 1)
     if (portfolio >= fiNumber) return { fiNumber, fiAge: age + y, alreadyThere: false }
   }
   return { fiNumber, fiAge: null, alreadyThere: false }
 }
 
-function metricsFor(params, investments, spendMonthly, cash, mortgage, extraPrincipal) {
+function metricsFor(params, investments, contribForYear, tailContrib, nowSpendMonthly, tailSpendMonthly, cash, mortgage, extraPrincipalForMonth) {
   const mc = monteCarloRetirement(params, { ...MC_OPTS, rng: seededRng(42) })
   const det = deterministicProjection(params)
-  const fi = fiFrom(params.age, investments, params.annualContrib, spendMonthly)
+  const fi = fiFrom(params.age, investments, contribForYear, tailSpendMonthly)
   const out = {
     fiAge: fi.fiAge,
     fiNumber: Math.round(fi.fiNumber),
@@ -72,20 +95,22 @@ function metricsFor(params, investments, spendMonthly, cash, mortgage, extraPrin
     successPct: Math.round(mc.successRate * 100),
     medianAtRetirement: Math.round(mc.band.find(b => b.age === params.retireAge)?.p50 ?? 0),
     fundsLastUntil: det.depletedAt || `${params.lifeExpectancy}+`,
-    annualContrib: Math.round(params.annualContrib),
+    annualContrib: Math.round(tailContrib),
     retireAge: params.retireAge,
-    efMonths: spendMonthly > 0 ? Math.round((cash / spendMonthly) * 10) / 10 : null,
+    efMonths: nowSpendMonthly > 0 ? Math.round((cash / nowSpendMonthly) * 10) / 10 : null,
     mortgage: null,
   }
   if (mortgage) {
-    const s = amortizationSchedule(mortgage.balance, mortgage.rate, mortgage.payment, extraPrincipal)
+    const s = amortizationSchedule(mortgage.balance, mortgage.rate, mortgage.payment, extraPrincipalForMonth)
     if (s.feasible) out.mortgage = { payoffDate: s.payoffDate, months: s.months, interest: Math.round(s.totalInterest) }
   }
   return out
 }
 
-// state + levers → { ready, base, scen, flowMonthly, assumptions }
-export function runScenario(state, levers) {
+// state + scenario → { ready, base, scen, phases:[{years, flowMonthly, contribAnnual, spendMonthly}] }
+// scenario: { retireAge, windfall, phases: [{years|null, income, spouseIncome,
+//             spendMonthly, extraInvestMonthly, extraPrincipalMonthly}] }
+export function runScenario(state, scenario) {
   const totals = computeTotals(state)
   const params0 = retirementParams(state, totals.investments)
   if (!params0.ready) return { ready: false, missing: params0.missing }
@@ -94,24 +119,34 @@ export function runScenario(state, levers) {
   const r = state.retirement || {}
   const filing = p.filingStatus || 'single'
   const b = scenarioBaseline(state)
+  const basePhase = {
+    income: b.income, spouseIncome: b.spouseIncome, spendMonthly: b.spendMonthly,
+    extraInvestMonthly: 0, extraPrincipalMonthly: 0,
+  }
 
-  const afterTax = (income) => income - estimateFederalTax(income, filing).tax
-  // Flow-through: after-tax income delta minus spending delta, monthly.
-  const flowMonthly =
-    (afterTax(num(levers.income) + num(levers.spouseIncome)) - afterTax(b.income + b.spouseIncome)) / 12
-    - (num(levers.spendMonthly) - b.spendMonthly)
+  const afterTax = income => income - estimateFederalTax(income, filing).tax
+  const baseAT = afterTax(b.income + b.spouseIncome)
 
-  const contribScen = Math.max(0, params0.annualContrib + flowMonthly * 12 + num(levers.extraInvestMonthly) * 12)
-  const investScen = Math.max(0, totals.investments + num(levers.windfall))
+  // Per-phase cash-flow delta and resulting contributions.
+  const phases = resolvePhases(scenario.phases, basePhase).map(ph => {
+    const flowMonthly = (afterTax(num(ph.income) + num(ph.spouseIncome)) - baseAT) / 12
+      - (num(ph.spendMonthly) - b.spendMonthly)
+    const contribAnnual = Math.max(0, params0.annualContrib + flowMonthly * 12 + num(ph.extraInvestMonthly) * 12)
+    return { ...ph, flowMonthly: Math.round(flowMonthly), contribAnnual: Math.round(contribAnnual) }
+  })
+  const tail = phases[phases.length - 1]
+
+  const contribForYear = y => phaseAtYear(phases, y).contribAnnual
+  const investScen = Math.max(0, totals.investments + num(scenario.windfall))
 
   // Retirement spending: if it was derived from living expenses (no explicit
-  // override on the Retirement tab), scale it with the spending lever.
+  // override on the Retirement tab), scale it with the long-run spending.
   const spendingExplicit = num(r.spendingMonthly) > 0
   const retSpendScen = spendingExplicit
     ? params0.spendingMonthly
-    : Math.round(num(levers.spendMonthly) * RETIREMENT_DEFAULTS.spendingPct)
+    : Math.round(num(tail.spendMonthly) * RETIREMENT_DEFAULTS.spendingPct)
 
-  const retireAgeScen = Math.round(Math.max(params0.age + 1, num(levers.retireAge) || params0.retireAge))
+  const retireAgeScen = Math.round(Math.max(params0.age + 1, num(scenario.retireAge) || params0.retireAge))
 
   const home = state.home || {}
   const mortgage = num(home.mortgageBalance) > 0 && num(home.mortgageRate) > 0 && num(home.monthlyPayment) > 0
@@ -121,17 +156,29 @@ export function runScenario(state, levers) {
   const paramsScen = {
     ...params0,
     savings: investScen,
-    annualContrib: contribScen,
+    annualContrib: tail.contribAnnual,
+    contribAt: age => contribForYear(Math.max(0, age - params0.age - 1)),
     retireAge: retireAgeScen,
     lifeExpectancy: Math.max(params0.lifeExpectancy, retireAgeScen + 1),
     spendingMonthly: retSpendScen,
     spendingAnnual: retSpendScen * 12,
   }
 
+  const extraPrincipalForMonth = n => num(phaseAtYear(phases, Math.floor((n - 1) / 12)).extraPrincipalMonthly)
+
   return {
     ready: true,
-    flowMonthly: Math.round(flowMonthly),
-    base: metricsFor(params0, totals.investments, b.spendMonthly, totals.cash, mortgage, 0),
-    scen: metricsFor(paramsScen, investScen, num(levers.spendMonthly), totals.cash, mortgage, num(levers.extraPrincipalMonthly)),
+    phases: phases.map(ph => ({
+      years: ph.years, flowMonthly: ph.flowMonthly, contribAnnual: ph.contribAnnual,
+      spendMonthly: Math.round(num(ph.spendMonthly)),
+    })),
+    base: metricsFor(
+      params0, totals.investments, () => params0.annualContrib, params0.annualContrib,
+      b.spendMonthly, b.spendMonthly, totals.cash, mortgage, 0,
+    ),
+    scen: metricsFor(
+      paramsScen, investScen, contribForYear, tail.contribAnnual,
+      num(phases[0].spendMonthly), num(tail.spendMonthly), totals.cash, mortgage, extraPrincipalForMonth,
+    ),
   }
 }

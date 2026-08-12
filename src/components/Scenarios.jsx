@@ -5,42 +5,64 @@ import { formatMonths } from '../lib/mortgage.js'
 import Icon from './Icon.jsx'
 
 // What-if sandbox: fork the real numbers, move levers, compare side by side.
-// Levers live in component state only — nothing here changes stored data.
+// Scenarios can be time-boxed — phase 1 for N years, an optional "after
+// that" phase, then back to today's numbers. Levers live in component state
+// only; nothing here changes stored data.
 
-const PRESETS = [
-  { label: 'Single income', apply: b => ({ ...b, spouseIncome: 0 }) },
-  { label: 'Spend $1,000/mo less', apply: b => ({ ...b, spendMonthly: Math.max(0, b.spendMonthly - 1000) }) },
-  { label: 'Invest $1,000/mo more', apply: b => ({ ...b, extraInvestMonthly: 1000 }) },
-  { label: '+$500/mo to mortgage', apply: b => ({ ...b, extraPrincipalMonthly: 500 }) },
-  { label: '$50k windfall invested', apply: b => ({ ...b, windfall: 50000 }) },
-  { label: 'Retire 3 years earlier', apply: b => ({ ...b, retireAge: Math.max(40, b.retireAge - 3) }) },
-]
+const PHASE_KEYS = ['income', 'spouseIncome', 'spendMonthly', 'extraInvestMonthly', 'extraPrincipalMonthly']
+const DURATIONS = [1, 2, 3, 4, 5, 7, 10]
 
-function Lever({ label, k, levers, setLever, money, hint }) {
+function phaseFrom(b, over = {}) {
+  return {
+    years: '', income: b.income, spouseIncome: b.spouseIncome, spendMonthly: b.spendMonthly,
+    extraInvestMonthly: 0, extraPrincipalMonthly: 0, ...over,
+  }
+}
+
+function Lever({ label, k, phase, setPhase, money, base }) {
+  const changed = base !== undefined && Number(phase[k]) !== Number(base)
   return (
     <label>{label}
       <span className={money ? 'input-money' : undefined}>
         <input
           type="number" inputMode="decimal"
-          value={levers[k]}
-          onChange={e => setLever(k, e.target.value)}
+          value={phase[k]}
+          onChange={e => setPhase(k, e.target.value === '' ? '' : Number(e.target.value))}
         />
       </span>
-      {hint && <span className="small muted" style={{ display: 'block', marginTop: 3 }}>{hint}</span>}
+      {changed && <span className="small muted" style={{ display: 'block', marginTop: 3 }}>today: {money ? fmt(base) : base}</span>}
     </label>
   )
 }
 
 const dateLabel = m => new Date(m + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })
+const yrs = n => `${n} yr${n === 1 ? '' : 's'}`
 
 export default function Scenarios() {
   const { state } = useStore()
   const baseline = useMemo(() => scenarioBaseline(state), [state])
-  const [levers, setLevers] = useState(baseline)
-  const setLever = (k, v) => setLevers(l => ({ ...l, [k]: v === '' ? '' : Number(v) }))
+  const [p1, setP1] = useState(() => phaseFrom(baseline))
+  const [p2, setP2] = useState(() => phaseFrom(baseline))
+  const [globals, setGlobals] = useState({ retireAge: baseline.retireAge, windfall: 0 })
+  const setPhase1 = (k, v) => setP1(ph => ({ ...ph, [k]: v }))
+  const setPhase2 = (k, v) => setP2(ph => ({ ...ph, [k]: v }))
+  const reset = () => { setP1(phaseFrom(baseline)); setP2(phaseFrom(baseline)); setGlobals({ retireAge: baseline.retireAge, windfall: 0 }) }
 
-  const touched = JSON.stringify(levers) !== JSON.stringify(baseline)
-  const result = useMemo(() => runScenario(state, levers), [state, levers])
+  const timeboxed = p1.years !== '' && Number(p1.years) > 0
+  const scenario = {
+    retireAge: globals.retireAge,
+    windfall: globals.windfall,
+    phases: [
+      { ...p1, years: timeboxed ? Number(p1.years) : null },
+      ...(timeboxed ? [{ ...p2, years: p2.years === '' ? null : Number(p2.years) }] : []),
+    ],
+  }
+  const touched =
+    PHASE_KEYS.some(k => Number(p1[k]) !== Number(phaseFrom(baseline)[k])) || timeboxed ||
+    (timeboxed && PHASE_KEYS.some(k => Number(p2[k]) !== Number(phaseFrom(baseline)[k]))) ||
+    Number(globals.retireAge) !== baseline.retireAge || Number(globals.windfall) !== 0
+
+  const result = useMemo(() => runScenario(state, scenario), [state, JSON.stringify(scenario)])
 
   if (!result.ready) {
     return (
@@ -56,7 +78,28 @@ export default function Scenarios() {
     )
   }
 
-  const { base, scen, flowMonthly } = result
+  const { base, scen, phases } = result
+
+  const PRESETS = [
+    { label: 'One income for 2 years', apply: () => { reset(); setP1(phaseFrom(baseline, { spouseIncome: 0, years: 2 })) } },
+    { label: 'Half income for 1 year', apply: () => { reset(); setP1(phaseFrom(baseline, { income: Math.round(baseline.income / 2), years: 1 })) } },
+    { label: 'Spend $1,000/mo less', apply: () => { reset(); setP1(phaseFrom(baseline, { spendMonthly: Math.max(0, baseline.spendMonthly - 1000) })) } },
+    { label: 'Invest $1,000/mo more', apply: () => { reset(); setP1(phaseFrom(baseline, { extraInvestMonthly: 1000 })) } },
+    { label: '+$500/mo to mortgage for 5 years', apply: () => { reset(); setP1(phaseFrom(baseline, { extraPrincipalMonthly: 500, years: 5 })) } },
+    { label: '$50k windfall invested', apply: () => { reset(); setGlobals(g => ({ ...g, windfall: 50000 })) } },
+    { label: 'Retire 3 years earlier', apply: () => { reset(); setGlobals(g => ({ ...g, retireAge: Math.max(40, baseline.retireAge - 3) })) } },
+  ]
+
+  // Phase labels for the flow note and the contributions chain.
+  const phaseLabel = (i, ph) => {
+    if (ph.years === null) return i === 0 ? 'Ongoing' : 'After that'
+    const start = phases.slice(0, i).reduce((s, x) => s + (x.years || 0), 0)
+    return ph.years === 1 ? `Year ${start + 1}` : `Years ${start + 1}–${start + ph.years}`
+  }
+  const contribChain = phases.length > 1
+    ? phases.map(ph => `${fmt(ph.contribAnnual)}${ph.years ? ` for ${yrs(ph.years)}` : ''}`).join(', then ')
+    : fmt(scen.annualContrib)
+
   const rows = [
     {
       label: 'Financial independence at age',
@@ -67,7 +110,7 @@ export default function Scenarios() {
       goodWhenNegative: true,
     },
     {
-      label: 'FI target (25× spending)',
+      label: 'FI target (25× long-run spending)',
       b: fmt(base.fiNumber), s: fmt(scen.fiNumber),
       delta: scen.fiNumber - base.fiNumber, fmtDelta: d => `${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}`,
       goodWhenNegative: true,
@@ -90,8 +133,9 @@ export default function Scenarios() {
     },
     {
       label: 'Investing per year',
-      b: fmt(base.annualContrib), s: fmt(scen.annualContrib),
-      delta: scen.annualContrib - base.annualContrib, fmtDelta: d => `${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}`,
+      b: fmt(base.annualContrib), s: contribChain,
+      delta: scen.annualContrib - base.annualContrib,
+      fmtDelta: d => `${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}${phases.length > 1 ? ' long-run' : ''}`,
       goodWhenNegative: false,
     },
     {
@@ -119,6 +163,13 @@ export default function Scenarios() {
     ] : []),
   ]
 
+  const durationSelect = (value, onChange, foreverLabel) => (
+    <select value={value} onChange={e => onChange(e.target.value)} aria-label="Phase duration">
+      <option value="">{foreverLabel}</option>
+      {DURATIONS.map(n => <option key={n} value={n}>{yrs(n)}</option>)}
+    </select>
+  )
+
   return (
     <div className="page">
       <div className="page-head">
@@ -128,34 +179,75 @@ export default function Scenarios() {
             A sandbox copy of your real numbers. Move a lever, see what changes — nothing here edits your data.
           </p>
         </div>
-        {touched && <button className="btn" onClick={() => setLevers(baseline)}>Reset to today</button>}
+        {touched && <button className="btn" onClick={reset}>Reset to today</button>}
       </div>
 
       <div className="card">
         <h2><span className="icon-chip"><Icon name="lightbulb" /></span> What if…</h2>
         <div className="chip-row" style={{ marginBottom: 10 }}>
           {PRESETS.map(pr => (
-            <button key={pr.label} className="chip" onClick={() => setLevers(pr.apply(baseline))}>{pr.label}</button>
+            <button key={pr.label} className="chip" onClick={pr.apply}>{pr.label}</button>
           ))}
         </div>
-        <div className="form-grid">
-          <Lever label="Your gross income" k="income" levers={levers} setLever={setLever} money
-            hint={levers.income !== baseline.income ? `today: ${fmt(baseline.income)}` : undefined} />
-          <Lever label="Spouse gross income" k="spouseIncome" levers={levers} setLever={setLever} money
-            hint={levers.spouseIncome !== baseline.spouseIncome ? `today: ${fmt(baseline.spouseIncome)}` : undefined} />
-          <Lever label="Monthly spending" k="spendMonthly" levers={levers} setLever={setLever} money
-            hint={levers.spendMonthly !== baseline.spendMonthly ? `today: ${fmt(baseline.spendMonthly)}` : undefined} />
-          <Lever label="Retire at age" k="retireAge" levers={levers} setLever={setLever}
-            hint={levers.retireAge !== baseline.retireAge ? `plan today: ${baseline.retireAge}` : undefined} />
-          <Lever label="Extra invested per month" k="extraInvestMonthly" levers={levers} setLever={setLever} money />
-          <Lever label="Extra mortgage principal per month" k="extraPrincipalMonthly" levers={levers} setLever={setLever} money />
-          <Lever label="One-time windfall, invested" k="windfall" levers={levers} setLever={setLever} money />
+
+        <div className="row gap wrap" style={{ alignItems: 'center', marginBottom: 8 }}>
+          <strong className="small">{timeboxed ? `First ${yrs(Number(p1.years))}` : 'The change'}</strong>
+          <span className="small muted">lasts</span>
+          {durationSelect(p1.years, v => setPhase1('years', v), 'from now on')}
         </div>
-        {touched && flowMonthly !== 0 && (
+        <div className="form-grid">
+          <Lever label="Your gross income" k="income" phase={p1} setPhase={setPhase1} money base={baseline.income} />
+          <Lever label="Spouse gross income" k="spouseIncome" phase={p1} setPhase={setPhase1} money base={baseline.spouseIncome} />
+          <Lever label="Monthly spending" k="spendMonthly" phase={p1} setPhase={setPhase1} money base={baseline.spendMonthly} />
+          <Lever label="Extra invested per month" k="extraInvestMonthly" phase={p1} setPhase={setPhase1} money />
+          <Lever label="Extra mortgage principal per month" k="extraPrincipalMonthly" phase={p1} setPhase={setPhase1} money />
+        </div>
+
+        {timeboxed && (
+          <>
+            <div className="row gap wrap" style={{ alignItems: 'center', margin: '14px 0 8px' }}>
+              <strong className="small">After that</strong>
+              <span className="small muted">for</span>
+              {durationSelect(p2.years, v => setPhase2('years', v), 'ever after')}
+              {p2.years !== '' && <span className="small muted">— then back to today's numbers</span>}
+            </div>
+            <div className="form-grid">
+              <Lever label="Your gross income" k="income" phase={p2} setPhase={setPhase2} money base={baseline.income} />
+              <Lever label="Spouse gross income" k="spouseIncome" phase={p2} setPhase={setPhase2} money base={baseline.spouseIncome} />
+              <Lever label="Monthly spending" k="spendMonthly" phase={p2} setPhase={setPhase2} money base={baseline.spendMonthly} />
+              <Lever label="Extra invested per month" k="extraInvestMonthly" phase={p2} setPhase={setPhase2} money />
+              <Lever label="Extra mortgage principal per month" k="extraPrincipalMonthly" phase={p2} setPhase={setPhase2} money />
+            </div>
+          </>
+        )}
+
+        <div className="form-grid" style={{ marginTop: 14 }}>
+          <label>Retire at age
+            <input type="number" inputMode="decimal" value={globals.retireAge}
+              onChange={e => setGlobals(g => ({ ...g, retireAge: e.target.value === '' ? '' : Number(e.target.value) }))} />
+            {Number(globals.retireAge) !== baseline.retireAge && <span className="small muted" style={{ display: 'block', marginTop: 3 }}>plan today: {baseline.retireAge}</span>}
+          </label>
+          <label>One-time windfall, invested
+            <span className="input-money">
+              <input type="number" inputMode="decimal" value={globals.windfall}
+                onChange={e => setGlobals(g => ({ ...g, windfall: e.target.value === '' ? '' : Number(e.target.value) }))} />
+            </span>
+          </label>
+        </div>
+
+        {touched && phases.some(ph => ph.flowMonthly !== 0) && (
           <p className="small muted" style={{ marginBottom: 0 }}>
-            Cash-flow change: <strong className={flowMonthly > 0 ? 'pos-text' : 'neg-text'}>
-            {flowMonthly > 0 ? '+' : '−'}{fmt(Math.abs(flowMonthly))}/mo</strong> after rough federal tax —
-            assumed to flow into (or out of) investing.
+            Cash-flow change:{' '}
+            {phases.filter(ph => ph.flowMonthly !== 0 || phases.length > 1).map((ph, i) => (
+              <span key={i}>
+                {i > 0 && ' · '}
+                {phaseLabel(phases.indexOf(ph), ph)}:{' '}
+                <strong className={ph.flowMonthly >= 0 ? 'pos-text' : 'neg-text'}>
+                  {ph.flowMonthly >= 0 ? '+' : '−'}{fmt(Math.abs(ph.flowMonthly))}/mo
+                </strong>
+              </span>
+            ))}
+            {' '}after rough federal tax — assumed to flow into (or out of) investing.
           </p>
         )}
       </div>
@@ -185,10 +277,10 @@ export default function Scenarios() {
           </table>
         </div>
         <p className="muted small" style={{ marginBottom: 0 }}>
-          Assumptions: income/spending changes flow through to investing (never below $0); federal tax only,
-          rough brackets; {`${Math.round(100 * 0.05)}`}% real growth and the 4% rule for FI; retirement odds from
-          the same simulation as the Retirement tab (seeded, so deltas are real, not noise). Changes here are
-          modeled as permanent — a one-year change lands somewhere in between. Educational, not a plan.
+          Assumptions: income/spending changes flow through to investing during their phase (never below $0);
+          federal tax only, rough brackets; 5% real growth and the 4% rule for FI, judged against long-run
+          spending; retirement odds from the same simulation as the Retirement tab (seeded, so deltas are real,
+          not noise). Educational, not a plan.
         </p>
       </div>
     </div>
