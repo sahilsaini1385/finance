@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useEffect, useReducer } from 'react'
+import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from 'react'
 import { computeTotals } from './lib/advisor.js'
 import { localToday, localMonth } from './lib/dates.js'
 import { buildMonthlyReport, reportHasData } from './lib/report.js'
 import { scanForTransfers, SCAN_VERSION } from './lib/transfers.js'
 import { migrateAmazonCategory } from './lib/categorize.js'
+import { createFamilySyncEngine } from './lib/familySync.js'
 
 const STORAGE_KEY = 'finance-app-v1'
 
@@ -346,13 +347,38 @@ export function StoreProvider({ children }) {
     return init
   })
 
+  // Family sync: the engine reads current state through a ref, applies remote
+  // merges via HYDRATE, and reports status for the Settings card. It runs only
+  // while connections.familySync is configured.
+  const stateRef = useRef(state)
+  stateRef.current = state
+  const [syncStatus, setSyncStatus] = useState({ state: 'idle', lastSync: null, version: 0, error: null })
+  const [syncEngine] = useState(() =>
+    createFamilySyncEngine({
+      getState: () => stateRef.current,
+      apply: merged => dispatch({ type: 'HYDRATE', payload: merged }),
+      onStatus: s => setSyncStatus(s),
+      emptyState: initialState,
+    }),
+  )
+  const syncCfg = state.connections?.familySync || null
+  useEffect(() => {
+    syncEngine.configure(syncCfg)
+  }, [syncEngine, syncCfg])
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') syncEngine.notifyLocalChange() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [syncEngine])
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     } catch (e) {
       console.error('Failed to save data', e)
     }
-  }, [state])
+    syncEngine.notifyLocalChange()
+  }, [state, syncEngine])
 
   // Cross-tab sync: when another tab persists, rehydrate instead of letting
   // this tab's stale in-memory state overwrite it on its next dispatch.
@@ -412,7 +438,7 @@ export function StoreProvider({ children }) {
     })
   }, [state.accounts, state.home]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <StoreContext.Provider value={{ state, dispatch }}>{children}</StoreContext.Provider>
+  return <StoreContext.Provider value={{ state, dispatch, syncEngine, syncStatus }}>{children}</StoreContext.Provider>
 }
 
 export function useStore() {
