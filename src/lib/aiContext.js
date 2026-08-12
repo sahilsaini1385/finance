@@ -16,6 +16,8 @@ import { retirementParams, deterministicProjection, monteCarloRetirement } from 
 import { localMonth } from './dates.js'
 import { oopStatus } from './health.js'
 import { paystubYearSummary } from './income.js'
+import { amortizationSchedule, horizonOutlook, extraPaymentScenarios } from './mortgage.js'
+import { prepayVsInvestSummary } from './prepay.js'
 import { goalPace } from './goals.js'
 import { policyCoverage, enrollmentEvidence } from './facts.js'
 import { projectFI } from './projection.js'
@@ -137,13 +139,39 @@ export function buildFinancialContext(state) {
         status: p.status,
       }
     }),
-    home: state.home?.currentValue ? {
-      value: r0(state.home.currentValue),
-      mortgageBalance: r0(state.home.mortgageBalance),
-      rate: state.home.mortgageRate,
-      monthlyPI: r0(state.home.monthlyPayment),
-      propertyTaxAnnual: r0(state.home.propertyTaxAnnual),
-    } : null,
+    home: (() => {
+      const h = state.home || {}
+      // Mortgage figures alone are enough for payoff context — don't require
+      // a home-value estimate.
+      if (!h.currentValue && !h.mortgageBalance) return null
+      const base = {
+        value: r0(h.currentValue),
+        mortgageBalance: r0(h.mortgageBalance),
+        rate: h.mortgageRate,
+        monthlyPI: r0(h.monthlyPayment),
+        propertyTaxAnnual: r0(h.propertyTaxAnnual),
+      }
+      const s = amortizationSchedule(h.mortgageBalance, h.mortgageRate, h.monthlyPayment)
+      if (s.feasible) {
+        const o = out => out && {
+          interestPaid: r0(out.interestPaid), principalPaid: r0(out.principalPaid),
+          endingBalance: r0(out.endingBalance), paidOff: out.paidOff,
+        }
+        base.payoff = {
+          payoffDate: s.payoffDate,
+          monthsRemaining: s.months,
+          interestRemaining: r0(s.totalInterest),
+          totalRemainingCost: r0(s.totalPaid),
+          thisMonthSplit: { interest: r0(s.rows[0].interest), principal: r0(s.rows[0].principal) },
+          principalInterestCrossover: s.crossoverDate,
+          outlook5y: o(horizonOutlook(s.rows, 60)),
+          outlook10y: o(horizonOutlook(s.rows, 120)),
+          extraPaymentScenarios: extraPaymentScenarios(h.mortgageBalance, h.mortgageRate, h.monthlyPayment)
+            .scenarios.map(x => ({ extra: x.extra, interestSaved: r0(x.interestSaved), monthsSaved: x.monthsSaved, payoffDate: x.payoffDate })),
+        }
+      }
+      return base
+    })(),
     appAlerts: getRecommendations(state)
       .filter(rec => rec.severity === 'critical' || rec.severity === 'warning')
       .slice(0, 8)
@@ -231,6 +259,21 @@ export function buildFinancialContext(state) {
     }
   }
 
+  // Prepay-vs-invest: guaranteed after-tax return on extra principal vs a
+  // taxable investment. Attached after the tax block because the after-tax
+  // rate depends on itemization; without tax data the full note rate stands
+  // (standard-deduction fallback) and the basis string says so.
+  if (ctx.home?.payoff) {
+    ctx.home.prepayVsInvest = prepayVsInvestSummary({
+      ratePct: state.home.mortgageRate,
+      marginalFedPct: ctx.tax?.marginalFedRatePct || 0,
+      itemizeLikely: Boolean(ctx.tax?.itemizeLikely),
+      itemizableEst: ctx.tax?.itemizableEst || 0,
+      standardDeduction: ctx.tax?.standardDeduction || 0,
+      annualMortgageInterest: ctx.tax?.deductibleSpendingSeenThisYear?.mortgageInterestEst || 0,
+    })
+  }
+
   // Cross-section disagreements the app has detected — surface, never average.
   if (conflicts.length > 0) {
     ctx.dataConflicts = conflicts.slice(0, 6).map(c => c.message)
@@ -241,5 +284,5 @@ export function buildFinancialContext(state) {
 
 export function contextDisclosure(ctx) {
   return `${Object.keys(ctx.accounts || {}).length} account balances, this month's budget, ` +
-    'recurring bills, insurance, goals, and retirement outlook'
+    'recurring bills, insurance, goals, mortgage payoff outlook, and retirement outlook'
 }
