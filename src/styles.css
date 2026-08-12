@@ -1516,6 +1516,18 @@ textarea:focus-visible {
 .neg-text {
   color: var(--critical-text, var(--warning-text));
 }
+.flow-month.clickable {
+  cursor: pointer;
+  border-radius: 8px;
+}
+.flow-month.clickable:hover .bar,
+.flow-month.clickable:focus-visible .bar {
+  filter: brightness(1.12);
+}
+.flow-month.clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .goal-numbers {
   font-size: 15px;
 }

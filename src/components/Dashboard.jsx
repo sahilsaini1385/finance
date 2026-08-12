@@ -251,19 +251,27 @@ export default function Dashboard({ onNavigate }) {
             <span><i className="swatch s2" /> Spending</span>
           </div>
           {hasTx ? (
-            <div className="flow-chart" role="img" aria-label="Monthly income and spending bars">
+            <div className="flow-chart" role="group" aria-label="Monthly income and spending — select a month to open its report">
               {months.map(k => (
                 <div
                   key={k}
-                  className="flow-month"
+                  className="flow-month clickable"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open the ${monthLabel(k)} report`}
+                  onClick={() => onNavigate('report', k)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('report', k) } }}
                   onMouseEnter={() => setHoverMonth(k)}
                   onMouseLeave={() => setHoverMonth(null)}
+                  onFocus={() => setHoverMonth(k)}
+                  onBlur={() => setHoverMonth(null)}
                 >
                   {hoverMonth === k && (
                     <div className="tooltip">
                       <strong>{monthLabel(k)}</strong>
                       <div className="tip-row"><span><i className="dot" style={{ background: 'var(--series-1)' }} /> In</span><span className="num">{fmt(flows[k].income)}</span></div>
                       <div className="tip-row"><span><i className="dot" style={{ background: 'var(--series-2)' }} /> Out</span><span className="num">{fmt(flows[k].expense)}</span></div>
+                      <div className="tip-row muted"><span>Open report</span><span>→</span></div>
                     </div>
                   )}
                   <div className="flow-bars">
