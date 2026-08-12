@@ -222,9 +222,9 @@ export default function Home() {
           </div>
         )}
         <p className="muted small" style={{ marginBottom: 0 }}>
-          Tip: to count home equity in your net worth, add the home's value as an “other” account and the
-          mortgage as a “mortgage” account in Accounts. Have your closing disclosure? Upload it below and hit
-          “Extract” to fill these fields automatically.
+          Home equity (value − mortgage) counts toward your net worth automatically — no need to add the house
+          as an account. Have your closing disclosure? Upload it below and hit “Extract” to fill these fields
+          automatically.
         </p>
       </div>
 

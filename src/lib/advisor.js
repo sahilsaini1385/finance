@@ -36,19 +36,39 @@ const num = v => {
   return Number.isNaN(n) ? 0 : n
 }
 
+// Comprehensive net worth: accounts (minus any the user excludes — e.g.
+// unvested RSUs, which are future income, not an asset yet) plus home equity
+// from the Home tab. A linked mortgage account already counts in debt; only
+// when there is none does the Home tab's mortgage balance stand in, so the
+// house is never double-counted.
 export function computeTotals(state) {
   const cashTypes = ['checking', 'savings']
   const investTypes = ['brokerage', 'retirement', 'hsa', '529']
   const debtTypes = ['credit card', 'loan', 'mortgage']
-  let cash = 0, investments = 0, debt = 0, other = 0
+  let cash = 0, investments = 0, debt = 0, other = 0, excluded = 0
+  let hasMortgageAccount = false
   for (const a of state.accounts) {
     const b = num(a.balance)
+    if (a.excludeFromNetWorth) {
+      excluded += debtTypes.includes(a.type) ? -Math.abs(b) : b
+      continue
+    }
+    if (a.type === 'mortgage') hasMortgageAccount = true
     if (cashTypes.includes(a.type)) cash += b
     else if (investTypes.includes(a.type)) investments += b
     else if (debtTypes.includes(a.type)) debt += Math.abs(b)
     else other += b
   }
-  return { cash, investments, debt, other, netWorth: cash + investments + other - debt }
+  const home = state.home || {}
+  const homeValue = num(home.currentValue)
+  const homeEquity = homeValue > 0 ? homeValue - (hasMortgageAccount ? 0 : num(home.mortgageBalance)) : 0
+  const accountsNet = cash + investments + other - debt
+  return {
+    cash, investments, debt, other, excluded,
+    homeValue, homeEquity,
+    accountsNet, // the old accounts-only figure
+    netWorth: accountsNet + homeEquity,
+  }
 }
 
 // Salary-multiple policies re-derive from the current base salary (see

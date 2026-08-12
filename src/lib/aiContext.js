@@ -63,10 +63,15 @@ export function buildFinancialContext(state) {
       total: r0(totals.netWorth),
       cash: r0(totals.cash),
       investments: r0(totals.investments),
+      homeEquity: r0(totals.homeEquity),
       debt: r0(totals.debt),
+      ...(totals.excluded !== 0 ? { excludedUnvested: r0(totals.excluded) } : {}),
       history90d: (state.history || []).slice(-45).filter((_, i) => i % 5 === 0).map(h => [h.date, r0(h.netWorth)]),
     },
-    accounts: (state.accounts || []).map(a => ({ name: `${a.institution} ${a.name}`, type: a.type, balance: r0(a.balance) })),
+    accounts: (state.accounts || []).map(a => ({
+      name: `${a.institution} ${a.name}`, type: a.type, balance: r0(a.balance),
+      ...(a.excludeFromNetWorth ? { excludedFromNetWorth: true } : {}),
+    })),
     budgetThisMonth: {
       month,
       incomeSoFar: r0(income),

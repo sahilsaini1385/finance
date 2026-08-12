@@ -7,7 +7,7 @@ const INSTITUTIONS = ['Fidelity', 'Chase', 'Bank of America', 'Other']
 const TYPES = ['checking', 'savings', 'credit card', 'brokerage', 'retirement', 'hsa', '529', 'loan', 'mortgage', 'other']
 const DEBT_TYPES = ['credit card', 'loan', 'mortgage']
 
-const blank = { name: '', institution: 'Fidelity', type: 'checking', balance: '' }
+const blank = { name: '', institution: 'Fidelity', type: 'checking', balance: '', excludeFromNetWorth: false }
 
 export default function Accounts() {
   const { state, dispatch } = useStore()
@@ -22,7 +22,7 @@ export default function Accounts() {
   const submit = e => {
     e.preventDefault()
     if (!form.name.trim()) return
-    const payload = { ...form, balance: parseFloat(form.balance) || 0, updated: new Date().toISOString().slice(0, 10) }
+    const payload = { ...form, balance: parseFloat(form.balance) || 0, excludeFromNetWorth: Boolean(form.excludeFromNetWorth), updated: new Date().toISOString().slice(0, 10) }
     if (editingId) {
       dispatch({ type: 'UPDATE_ACCOUNT', payload: { ...payload, id: editingId } })
       setEditingId(null)
@@ -38,7 +38,7 @@ export default function Accounts() {
   const edit = a => {
     setEditingId(a.id)
     setShowForm(true)
-    setForm({ name: a.name, institution: a.institution, type: a.type, balance: String(a.balance) })
+    setForm({ name: a.name, institution: a.institution, type: a.type, balance: String(a.balance), excludeFromNetWorth: Boolean(a.excludeFromNetWorth) })
   }
 
   const remove = a => {
@@ -101,6 +101,14 @@ export default function Accounts() {
               <input type="number" step="0.01" inputMode="decimal" value={form.balance} onChange={e => set('balance', e.target.value)} placeholder="0.00" />
             </span>
           </label>
+          <label className="span-2 check-pill" style={{ justifySelf: 'start' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(form.excludeFromNetWorth)}
+              onChange={e => set('excludeFromNetWorth', e.target.checked)}
+            />
+            Exclude from net worth — for money that isn't yours yet (unvested RSUs, a 529 you manage for someone else)
+          </label>
           <div className="form-actions">
             <button className="btn primary" type="submit">{editingId ? 'Save changes' : 'Add account'}</button>
             <button className="btn" type="button" onClick={() => { setEditingId(null); setShowForm(false); setForm(blank) }}>Cancel</button>
@@ -132,7 +140,10 @@ export default function Accounts() {
             <tbody>
               {accts.map(a => (
                 <tr key={a.id}>
-                  <td>{a.name}</td>
+                  <td>
+                    {a.name}
+                    {a.excludeFromNetWorth && <span className="badge" style={{ marginLeft: 6 }} title="Tracked here, but not counted in your net worth">not in net worth</span>}
+                  </td>
                   <td>{a.type}</td>
                   <td className="num">{fmtCents(a.balance)}</td>
                   <td className="small">{a.updated}</td>
