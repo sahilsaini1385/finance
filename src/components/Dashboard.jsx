@@ -171,6 +171,15 @@ export default function Dashboard({ onNavigate }) {
           )}
         </div>
         {!hasAccounts && <div className="hero-sub">Add an account to start</div>}
+        {hasAccounts && (
+          <div className="hero-sub money" style={{ marginTop: 2 }}>
+            {fmt(totals.cash)} cash + {fmt(totals.investments)} investments
+            {totals.other !== 0 && <> + {fmt(totals.other)} other</>}
+            {totals.homeEquity !== 0 && <> + {fmt(totals.homeEquity)} home equity</>}
+            {totals.debt > 0 && <> − {fmt(totals.debt)} debt</>}
+            {totals.excluded !== 0 && <span className="muted"> · {fmt(Math.abs(totals.excluded))} excluded (unvested)</span>}
+          </div>
+        )}
         {state.history.length >= 2 ? (
           <>
             <AreaChart

@@ -266,6 +266,29 @@ function resolve(state) {
     }
   }
 
+  // ---- home double-count guard ----
+  // The old tip said "add the house as an 'other' account"; home equity now
+  // counts automatically from the Home tab, so such an account would count
+  // the house twice.
+  const homeVal = num((state.home || {}).currentValue)
+  if (homeVal > 0) {
+    const dupe = (state.accounts || []).find(a =>
+      a.type === 'other' && !a.excludeFromNetWorth &&
+      Math.abs(Math.abs(num(a.balance)) - homeVal) <= homeVal * 0.05)
+    if (dupe) {
+      push({
+        factId: 'homeEquity', severity: 'warning',
+        message: `“${dupe.institution} ${dupe.name}” (${fmtUsd(num(dupe.balance))}) looks like your home's value. Home equity now counts automatically from the Home tab, so that account double-counts the house.`,
+        surfaces: ['dashboard', 'advisor'],
+        fix: {
+          label: 'Exclude it from net worth',
+          dispatches: [{ action: 'UPDATE_ACCOUNT', payload: { id: dupe.id, excludeFromNetWorth: true } }],
+          preview: { from: 'house counted twice', to: 'counted once' },
+        },
+      })
+    }
+  }
+
   // ---- non-mortgage debt ----
   const debtAccounts = (state.accounts || []).filter(a => a.type === 'credit card' || a.type === 'loan')
   const syncedDebt = debtAccounts.reduce((s, a) => s + Math.abs(num(a.balance)), 0)

@@ -389,6 +389,8 @@ export function StoreProvider({ children }) {
   }, [state.transactions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Net-worth history: upsert one snapshot per day whenever balances move.
+  // netWorth is comprehensive (accounts + home equity, minus excluded
+  // accounts); homeEquity rides along so the composition is reconstructable.
   useEffect(() => {
     if (state.accounts.length === 0) return
     const t = computeTotals(state)
@@ -397,9 +399,9 @@ export function StoreProvider({ children }) {
     if (existing && Math.abs(existing.netWorth - t.netWorth) < 0.005) return
     dispatch({
       type: 'RECORD_SNAPSHOT',
-      payload: { date: today, netWorth: t.netWorth, cash: t.cash, investments: t.investments, debt: t.debt },
+      payload: { date: today, netWorth: t.netWorth, cash: t.cash, investments: t.investments, debt: t.debt, homeEquity: t.homeEquity },
     })
-  }, [state.accounts]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.accounts, state.home]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <StoreContext.Provider value={{ state, dispatch }}>{children}</StoreContext.Provider>
 }
