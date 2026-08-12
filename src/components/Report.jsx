@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
-import { buildMonthlyReport, shiftMonth } from '../lib/report.js'
+import { buildMonthlyReport, shiftMonth, savingsRate as savingsRateFor } from '../lib/report.js'
 import { localMonth } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -32,7 +32,7 @@ export default function Report() {
   }
 
   const net = r.income - r.spend
-  const savingsRate = r.income > 0 ? (net / r.income) * 100 : null
+  const savingsRate = savingsRateFor(r.income, r.spend)
   const monthLabel = new Date(month + '-02').toLocaleString(undefined, { month: 'long', year: 'numeric' })
   const cats = Object.entries(r.byCat).sort((a, b) => b[1] - a[1])
   const maxCat = Math.max(1, ...cats.map(([, v]) => v))
@@ -140,7 +140,7 @@ export default function Report() {
               <div className="stat-value money" style={net < 0 ? { color: 'var(--critical)' } : undefined}>
                 {fmt(Math.abs(net))}
               </div>
-              <div className="stat-sub">{savingsRate !== null ? `${savingsRate.toFixed(0)}% savings rate` : '—'}</div>
+              <div className="stat-sub">{savingsRate !== null ? `${savingsRate.toFixed(0)}% savings rate` : 'savings rate — needs more income data'}</div>
             </div>
             <div className="stat-tile" style={{ cursor: 'default' }}>
               <div className="stat-label">Net worth</div>

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
-import { buildYearReport } from '../lib/report.js'
+import { buildYearReport, savingsRate as savingsRateFor } from '../lib/report.js'
 import Icon from './Icon.jsx'
 
 export default function YearReport({ year }) {
@@ -9,7 +9,7 @@ export default function YearReport({ year }) {
   const [hover, setHover] = useState(null)
 
   const net = r.income - r.spend
-  const savingsRate = r.income > 0 ? (net / r.income) * 100 : null
+  const savingsRate = savingsRateFor(r.income, r.spend)
   const cats = Object.entries(r.byCat).sort((a, b) => b[1] - a[1])
   const maxCat = Math.max(1, ...cats.map(([, v]) => v))
   const maxFlow = Math.max(1, ...r.series.map(s => Math.max(s.income, s.spend)))
@@ -44,7 +44,7 @@ export default function YearReport({ year }) {
         <div className="stat-tile" style={{ cursor: 'default' }}>
           <div className="stat-label">{net >= 0 ? 'Saved' : 'Overspent'}</div>
           <div className="stat-value money" style={net < 0 ? { color: 'var(--critical)' } : undefined}>{fmt(Math.abs(net))}</div>
-          <div className="stat-sub">{savingsRate !== null ? `${savingsRate.toFixed(0)}% savings rate` : '—'}</div>
+          <div className="stat-sub">{savingsRate !== null ? `${savingsRate.toFixed(0)}% savings rate` : 'savings rate — needs more income data'}</div>
         </div>
         <div className="stat-tile" style={{ cursor: 'default' }}>
           <div className="stat-label">Net worth</div>
