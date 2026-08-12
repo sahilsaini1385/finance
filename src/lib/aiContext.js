@@ -133,6 +133,7 @@ export function buildFinancialContext(state) {
         saved: r0(p.saved),
         depositPaceMonthly: r0(p.pace),
         neededMonthly: p.neededMonthly !== null ? r0(p.neededMonthly) : undefined,
+        assumedAnnualReturnPct: p.returnPct,
         status: p.status,
       }
     }),

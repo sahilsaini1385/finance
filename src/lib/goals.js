@@ -3,6 +3,13 @@
 // target date requires. Balance growth from market moves isn't a deposit
 // and doesn't show up in transactions, so this measures saving behavior,
 // which is the part the user controls.
+//
+// Growth: each goal carries an expected annual return (goal.returnPct,
+// default 0 = cash). The required monthly contribution treats the current
+// balance as compounding to the target date and the contributions as an
+// ordinary annuity; the ETA solves the same equation for time. 0% falls
+// back to the plain linear split. The assumption is always surfaced in the
+// UI — never silently baked in.
 
 const num = v => {
   const n = parseFloat(v)
@@ -45,8 +52,36 @@ export function goalPace(state, goal, todayStr) {
   const remaining = Math.max(0, target - saved)
   const done = target > 0 && saved >= target
   const monthsLeft = monthsUntil(goal.targetDate, today)
-  const neededMonthly = !done && monthsLeft !== null && monthsLeft > 0 ? remaining / monthsLeft : null
-  const etaMonths = !done && pace > 0 ? Math.ceil(remaining / pace) : null
+
+  const returnPct = Math.max(0, num(goal.returnPct))
+  const i = returnPct > 0 ? Math.pow(1 + returnPct / 100, 1 / 12) - 1 : 0 // monthly rate
+
+  // Required deposit so saved·(1+i)^n + PMT·((1+i)^n − 1)/i = target.
+  let neededMonthly = null
+  if (!done && monthsLeft !== null && monthsLeft > 0) {
+    if (i > 0) {
+      const x = Math.pow(1 + i, monthsLeft)
+      neededMonthly = Math.max(0, ((target - saved * x) * i) / (x - 1))
+    } else {
+      neededMonthly = remaining / monthsLeft
+    }
+  }
+
+  // ETA at the current pace: solve the same equation for n. With growth,
+  // (1+i)^n = (target + pace/i) / (saved + pace/i) — also covers pace = 0
+  // (growth alone) and yields no ETA when the ratio never reaches 1.
+  let etaMonths = null
+  if (!done) {
+    if (i > 0) {
+      const denom = saved + pace / i
+      const numer = target + pace / i
+      if (denom > 0 && numer / denom > 1) {
+        etaMonths = Math.ceil(Math.log(numer / denom) / Math.log(1 + i))
+      }
+    } else if (pace > 0) {
+      etaMonths = Math.ceil(remaining / pace)
+    }
+  }
   let etaLabel = null
   if (etaMonths !== null) {
     const d = new Date(today + 'T00:00')
@@ -61,5 +96,5 @@ export function goalPace(state, goal, todayStr) {
   else if (goal.targetDate && monthsLeft === 0 && remaining > 0) status = 'behind'
   else status = pace > 0 ? 'pacing' : 'stalled'
 
-  return { saved, target, remaining, pace, neededMonthly, monthsLeft, etaMonths, etaLabel, status, months: window }
+  return { saved, target, remaining, pace, neededMonthly, monthsLeft, etaMonths, etaLabel, status, returnPct, months: window }
 }

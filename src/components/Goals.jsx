@@ -5,14 +5,7 @@ import { useToast } from './Toaster.jsx'
 
 import { goalPace } from '../lib/goals.js'
 
-const blank = { name: '', target: '', targetDate: '', accountIds: [], note: '' }
-
-function monthsUntil(dateStr) {
-  if (!dateStr) return null
-  const now = new Date()
-  const d = new Date(dateStr)
-  return Math.max(0, (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - now.getMonth())
-}
+const blank = { name: '', target: '', targetDate: '', accountIds: [], note: '', returnPct: '' }
 
 export default function Goals() {
   const { state, dispatch } = useStore()
@@ -32,7 +25,7 @@ export default function Goals() {
   const submit = e => {
     e.preventDefault()
     if (!form.name.trim() || !parseFloat(form.target)) return
-    const payload = { ...form, target: parseFloat(form.target) }
+    const payload = { ...form, target: parseFloat(form.target), returnPct: parseFloat(form.returnPct) || 0 }
     if (editingId) {
       dispatch({ type: 'UPDATE_GOAL', payload: { ...payload, id: editingId } })
       setEditingId(null)
@@ -91,6 +84,13 @@ export default function Goals() {
           <label>Target date (optional)
             <input type="date" value={form.targetDate} onChange={e => set('targetDate', e.target.value)} />
           </label>
+          <label>Expected annual return %
+            <input
+              type="number" inputMode="decimal" step="0.5" min="0" max="15"
+              value={form.returnPct} onChange={e => set('returnPct', e.target.value)}
+              placeholder="0 = cash · invested ≈ 5–7"
+            />
+          </label>
           <label className="span-2">Note
             <input value={form.note} onChange={e => set('note', e.target.value)} placeholder="optional" />
           </label>
@@ -131,11 +131,13 @@ export default function Goals() {
         </div>
       ) : (
         state.goals.map(g => {
-          const saved = balanceOf(g.accountIds || [])
+          // One source of truth for all goal math (incl. the growth assumption).
+          const p = goalPace(state, g)
+          const saved = p.saved
           const pct = g.target > 0 ? Math.min(100, (saved / g.target) * 100) : 0
           const done = saved >= g.target
-          const months = monthsUntil(g.targetDate)
-          const monthlyNeeded = months > 0 && !done ? (g.target - saved) / months : null
+          const months = p.monthsLeft
+          const monthlyNeeded = p.neededMonthly
           const linkedCount = (g.accountIds || []).filter(id => state.accounts.some(a => a.id === id)).length
           return (
             <div className="card" key={g.id}>
@@ -145,7 +147,7 @@ export default function Goals() {
                   {g.name}
                 </h2>
                 <div className="row gap">
-                  <button className="btn ghost small" onClick={() => { setEditingId(g.id); setShowForm(true); setForm({ name: g.name, target: String(g.target), targetDate: g.targetDate || '', accountIds: g.accountIds || [], note: g.note || '' }) }}>Edit</button>
+                  <button className="btn ghost small" onClick={() => { setEditingId(g.id); setShowForm(true); setForm({ name: g.name, target: String(g.target), targetDate: g.targetDate || '', accountIds: g.accountIds || [], note: g.note || '', returnPct: g.returnPct ? String(g.returnPct) : '' }) }}>Edit</button>
                   <button className={armedId === g.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(g)}>
                     {armedId === g.id ? 'Confirm?' : 'Delete'}
                   </button>
@@ -164,12 +166,17 @@ export default function Goals() {
                   ? 'No accounts linked — edit the goal to link funding accounts.'
                   : `Funded by ${linkedCount} account${linkedCount > 1 ? 's' : ''}`}
                 {g.targetDate && !done && months !== null && (
-                  <> · {months} months to {g.targetDate}{monthlyNeeded ? ` — needs ${fmt(monthlyNeeded)}/mo` : ''}</>
+                  <>
+                    {' · '}{months} months to {g.targetDate}
+                    {monthlyNeeded !== null && ` — needs ${fmt(monthlyNeeded)}/mo`}
+                    {' '}<span title="Growth assumed on the current balance and future deposits. Edit the goal to change it.">
+                      assuming {p.returnPct}% annual return{p.returnPct === 0 ? ' (cash)' : ''}
+                    </span>
+                  </>
                 )}
                 {g.note && <> · {g.note}</>}
               </div>
               {!done && (() => {
-                const p = goalPace(state, g)
                 if (p.status === 'no-data') {
                   return linkedCount > 0 ? (
                     <div className="muted small money" style={{ marginTop: 4 }}>
