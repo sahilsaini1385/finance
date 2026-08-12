@@ -51,13 +51,16 @@ const FLAT = NAV.flatMap(g => g.items)
 const VALID_TABS = new Set(FLAT.map(i => i.id))
 
 export default function App() {
-  const [tab, setTabState] = useState(() => {
-    const h = window.location.hash.slice(1)
-    return VALID_TABS.has(h) ? h : 'dashboard'
+  // Routes are `#tab` or `#tab/param` (e.g. #report/2026-05 opens that
+  // month's report). The param is read once at mount by the target page.
+  const [route, setRoute] = useState(() => {
+    const [t, param] = window.location.hash.slice(1).split('/')
+    return { tab: VALID_TABS.has(t) ? t : 'dashboard', param: param || null }
   })
-  const setTab = id => {
-    setTabState(id)
-    window.history.replaceState(null, '', id === 'dashboard' ? '#' : `#${id}`)
+  const tab = route.tab
+  const setTab = (id, param = null) => {
+    setRoute({ tab: id, param })
+    window.history.replaceState(null, '', id === 'dashboard' && !param ? '#' : `#${id}${param ? `/${param}` : ''}`)
   }
   const { state } = useStore()
   const attention = useMemo(
@@ -131,7 +134,7 @@ export default function App() {
           {tab === 'goals' && <Goals />}
           {tab === 'retirement' && <Retirement />}
           {tab === 'scenarios' && <Scenarios />}
-          {tab === 'report' && <Report />}
+          {tab === 'report' && <Report key={route.param || 'live'} initialMonth={route.param} />}
           {tab === 'benefits' && <Benefits />}
           {tab === 'insurance' && <Insurance />}
           {tab === 'advisor' && <Advisor />}

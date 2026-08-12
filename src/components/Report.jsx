@@ -8,13 +8,15 @@ import YearReport from './YearReport.jsx'
 import TaxSummary from './TaxSummary.jsx'
 import Sankey from './Sankey.jsx'
 
-export default function Report() {
+export default function Report({ initialMonth = null }) {
   const { state, dispatch } = useStore()
   const toast = useToast()
   const thisMonth = localMonth()
   const thisYear = new Date().getFullYear()
   const [mode, setMode] = useState('month')
-  const [month, setMonth] = useState(thisMonth)
+  // Deep link (#report/YYYY-MM — e.g. a click on the dashboard cash-flow
+  // bars) starts on that month; the arrows take over from there.
+  const [month, setMonth] = useState(/^\d{4}-\d{2}$/.test(initialMonth || '') ? initialMonth : thisMonth)
   const [year, setYear] = useState(thisYear)
   const isCurrent = month === thisMonth
 
