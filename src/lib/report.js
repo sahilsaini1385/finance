@@ -12,6 +12,16 @@ export function shiftMonth(month, delta) {
   return d.toISOString().slice(0, 7)
 }
 
+// Savings rate = net / income — but only when there's enough income for the
+// ratio to mean anything. Early in a month a lone $2 interest credit against
+// a mortgage payment yields a six-figure negative percentage: true arithmetic,
+// absurd information. null = show a dash, not a number.
+export function savingsRate(income, spend) {
+  if (!(income >= 100)) return null
+  const rate = ((income - spend) / income) * 100
+  return rate < -1000 ? null : rate
+}
+
 export function monthStats(transactions, month) {
   let income = 0
   let spend = 0
