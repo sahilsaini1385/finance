@@ -30,7 +30,7 @@ function amountsOn(line) {
   AMT_RE.lastIndex = 0
   while ((m = AMT_RE.exec(line)) !== null) {
     out.push(parseAmount(m[1]))
-    AMT_RE.lastIndex = m.index + m[0].length - (m[0].endsWith(m[1]) ? 0 : 0)
+    AMT_RE.lastIndex = m.index + m[0].length
   }
   return out
 }

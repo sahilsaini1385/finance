@@ -28,16 +28,28 @@ PORT = int(os.environ.get("BUDGIE_BRIDGE_PORT", "8765"))
 TIMEOUT_SECS = 300
 
 # Only the Budgie app (and local dev) may use the bridge. Browsers enforce
-# this via CORS: we echo the Origin header back only when it's allowed.
-# Custom domain? Set BUDGIE_ORIGIN=https://your.domain before starting.
+# this via CORS + the origin check on every request.
+#
+# STRICT MODE (recommended — Budgie's setup screen shows the exact command):
+#   BUDGIE_ORIGIN=https://your-app.vercel.app python3 budgie-bridge.py
+# locks the bridge to that one origin (plus localhost for dev).
+#
+# Without BUDGIE_ORIGIN the bridge falls back to allowing any *.vercel.app
+# origin so it works out of the box — but vercel.app is shared public
+# hosting, so ANY Vercel-deployed page in your browser could then use your
+# Claude subscription through the bridge. Prefer strict mode.
+BUDGIE_ORIGIN = os.environ.get("BUDGIE_ORIGIN", "").rstrip("/")
+
+
 def origin_allowed(origin):
     if not origin:
         return False
-    extra = os.environ.get("BUDGIE_ORIGIN", "")
-    if extra and origin.rstrip("/") == extra.rstrip("/"):
-        return True
     host = (urlparse(origin).hostname or "").lower()
-    return host in ("localhost", "127.0.0.1") or host.endswith(".vercel.app")
+    if host in ("localhost", "127.0.0.1"):
+        return True
+    if BUDGIE_ORIGIN:
+        return origin.rstrip("/") == BUDGIE_ORIGIN
+    return host.endswith(".vercel.app")
 
 
 def find_claude():
@@ -155,8 +167,12 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return False  # browser aborted (Stop button) — kill claude
 
+        # stderr goes to a temp file, not a pipe: we only read stdout while
+        # claude runs, and an undrained stderr pipe fills up (~64KB) and
+        # deadlocks both processes — --verbose makes that a real risk.
+        stderr_file = tempfile.TemporaryFile(mode="w+", errors="replace")
         proc = subprocess.Popen(
-            cmd, cwd=WORKDIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cmd, cwd=WORKDIR, stdout=subprocess.PIPE, stderr=stderr_file,
             text=True, errors="replace",
         )
         got_result = False
@@ -183,7 +199,8 @@ class Handler(BaseHTTPRequestHandler):
                         emit({"done": True})
             proc.wait(timeout=TIMEOUT_SECS)
             if not got_result:
-                err = (proc.stderr.read() or "").strip()
+                stderr_file.seek(0)
+                err = (stderr_file.read() or "").strip()
                 emit({"error": (err.splitlines()[-1] if err else "Claude Code exited without a result — is it logged in? Run `claude` once to check.")})
         except subprocess.TimeoutExpired:
             proc.kill()
@@ -191,6 +208,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             if proc.poll() is None:
                 proc.kill()
+            stderr_file.close()
 
     def log_message(self, fmt, *args):  # quiet: one line per request, no noise
         sys.stderr.write("bridge: %s\n" % (fmt % args))
@@ -203,6 +221,12 @@ def main():
     else:
         print(f"✓ Using Claude Code at {CLAUDE}")
     print(f"✓ Budgie bridge listening on http://127.0.0.1:{PORT}")
+    if BUDGIE_ORIGIN:
+        print(f"✓ Locked to {BUDGIE_ORIGIN} (strict mode)")
+    else:
+        print("⚠  Accepting any *.vercel.app origin. Lock the bridge to YOUR app with:")
+        print("   BUDGIE_ORIGIN=https://your-app.vercel.app python3 budgie-bridge.py")
+        print("   (Budgie's Advisor setup shows this command with your exact address.)")
     print("  Leave this window open, then click Connect in Budgie's Advisor setup.")
     print("  Press Ctrl-C to stop.")
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)

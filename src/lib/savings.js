@@ -133,7 +133,7 @@ export function upcomingBills(recurring, insurance = [], days = 30) {
       bills.push({
         date: p.renewalDate,
         label: `${p.provider || p.policyName || 'policy'} ${p.type} renewal`.toLowerCase(),
-        amount: p.premiumFreq === 'year' ? num(p.premium) : num(p.premium),
+        amount: num(p.premium),
         kind: 'renewal',
       })
     }

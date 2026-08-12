@@ -299,7 +299,7 @@ export function getRecommendations(state) {
   if (dime > 0) {
     if (lifeCoverage < dime) {
       push('insurance', lifeCoverage === 0 ? 'critical' : 'warning',
-        `Life insurance gap: ~$${Math.round((dime - lifeCoverage) / 1000) * 1000 >= 1000 ? ((dime - lifeCoverage) / 1000000).toFixed(2) + 'M' : (dime - lifeCoverage).toLocaleString()} short of estimated need`,
+        `Life insurance gap: ~$${Math.round((dime - lifeCoverage) / 1000) * 1000 >= 1000000 ? ((dime - lifeCoverage) / 1000000).toFixed(2) + 'M' : Math.round(dime - lifeCoverage).toLocaleString()} short of estimated need`,
         `DIME estimate (Debt $${Math.round(dimeDebt).toLocaleString()} + 10× income $${Math.round(income * 10).toLocaleString()}${incomeVerified ? ' (payroll-verified)' : ''} + mortgage $${Math.round(dimeMortgage).toLocaleString()} + education $${num(p.educationNeeds).toLocaleString()}) ≈ $${Math.round(dime).toLocaleString()} of coverage. You have $${lifeCoverage.toLocaleString()}. Level-term insurance (20–30 yr) is cheap while you're healthy; skip whole-life unless you have a specific estate need.`)
     } else if (lifeCoverage > 0) {
       push('insurance', 'good', 'Life insurance meets DIME estimate', `Coverage of $${lifeCoverage.toLocaleString()} meets the estimated need. Re-check after major life events (new child, new house).`)

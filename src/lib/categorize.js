@@ -24,7 +24,7 @@ export const CATEGORIES = [
 const RULES = [
   ['Income', /payroll|direct dep|salary|paycheck|dividend|interest paid|int pymt/i],
   ['Housing', /mortgage|rent |rental|hoa |property tax/i],
-  ['Utilities', /electric|con ed|coned|pg&e|duke energy|water|gas co|utility|verizon|t-mobile|att\b|comcast|xfinity|spectrum|internet/i],
+  ['Utilities', /electric|con ed|coned|pg&e|duke energy|water|gas co|utility|verizon|t-mobile|\batt\b|comcast|xfinity|spectrum|internet/i],
   // Amazon's grocery arms stay Groceries — they're food, not shopping.
   ['Groceries', /grocery|wegmans|kroger|safeway|aldi|trader joe|whole foods|costco|walmart|target|wal-mart|h mart|food lion|publix|stop & shop|amazon fresh|amzn fresh|amazon groc/i],
   ['Dining', /restaurant|doordash|grubhub|ubereats|uber eats|chipotle|mcdonald|starbucks|dunkin|pizza|cafe|coffee|sushi|taco|deli|bar & grill/i],
