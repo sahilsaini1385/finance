@@ -124,8 +124,34 @@ export default function Dashboard({ onNavigate }) {
   const cash = useCountUp(totals.cash)
   const invest = useCountUp(totals.investments)
   const debt = useCountUp(totals.debt)
+  const homeEquity = useCountUp(totals.homeEquity)
 
-  const accountCount = type => state.accounts.filter(a => type.includes(a.type)).length
+  // Chart points: daily snapshots, downsampled to one per ISO week past 240
+  // points so years of history stay a light SVG path. First and last raw
+  // snapshots always survive, so the "Since <date>" math stays exact.
+  const chartPoints = useMemo(() => {
+    let h = state.history
+    if (h.length > 240) {
+      const byWeek = new Map()
+      for (const snap of h.slice(1, -1)) {
+        const d = new Date(snap.date + 'T12:00')
+        const day = (d.getDay() + 6) % 7
+        const monday = new Date(d)
+        monday.setDate(d.getDate() - day)
+        byWeek.set(monday.toISOString().slice(0, 10), snap) // last snapshot wins
+      }
+      h = [h[0], ...byWeek.values(), h[h.length - 1]]
+    }
+    return h.map(p => ({
+      x: new Date(p.date + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      value: p.netWorth,
+    }))
+  }, [state.history])
+
+  const accountCount = type => {
+    const n = state.accounts.filter(a => type.includes(a.type)).length
+    return `${n} account${n === 1 ? '' : 's'}`
+  }
 
   const monthLabel = k => new Date(k + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })
 
@@ -171,58 +197,40 @@ export default function Dashboard({ onNavigate }) {
           )}
         </div>
         {!hasAccounts && <div className="hero-sub">Add an account to start</div>}
-        {hasAccounts && (
-          <div className="hero-sub money" style={{ marginTop: 2 }}>
-            {fmt(totals.cash)} cash + {fmt(totals.investments)} investments
-            {totals.other !== 0 && <> + {fmt(totals.other)} other</>}
-            {totals.homeEquity !== 0 && <> + {fmt(totals.homeEquity)} home equity</>}
-            {totals.debt > 0 && <> − {fmt(totals.debt)} debt</>}
-            {totals.excluded !== 0 && <span className="muted"> · {fmt(Math.abs(totals.excluded))} excluded (unvested)</span>}
-          </div>
-        )}
+        {(() => {
+          const go = () => onNavigate('accounts')
+          const key = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go() } }
+          const cell = (label, value, sub) => (
+            <div className="hs-cell" role="button" tabIndex={0} onClick={go} onKeyDown={key} aria-label={`${label} — open Accounts`}>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value sm money">{hasAccounts ? fmt(Math.round(value)) : '—'}</div>
+              <div className="stat-sub">{sub}</div>
+            </div>
+          )
+          return (
+            <div className="hero-stats">
+              {cell('Cash', cash, `${accountCount(['checking', 'savings'])}${totals.other !== 0 ? ` · ${fmt(totals.other)} other` : ''}`)}
+              {cell('Investments', invest, `${accountCount(['brokerage', 'retirement', 'hsa', '529'])}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} unvested excluded` : ''}`)}
+              {totals.homeEquity !== 0 && cell('Home equity', homeEquity, 'included in net worth')}
+              {cell('Debt', debt, accountCount(['credit card', 'loan', 'mortgage']))}
+            </div>
+          )
+        })()}
         {state.history.length >= 2 ? (
           <>
-            <AreaChart
-              id="nw"
-              points={state.history.map(h => ({
-                x: new Date(h.date + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-                value: h.netWorth,
-              }))}
-              height={120}
-            />
+            <AreaChart id="nw" points={chartPoints} height={64} />
             <div className="hero-sub">
               Since {new Date(state.history[0].date + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}:{' '}
               {(() => {
                 const d = state.history[state.history.length - 1].netWorth - state.history[0].netWorth
                 return `${d >= 0 ? '+' : '−'}${fmt(Math.abs(Math.round(d)))}`
               })()}
-              {' '}· snapshots record automatically whenever balances change
+              {state.history.length < 14 && <> · snapshots record automatically whenever balances change</>}
             </div>
           </>
         ) : hasAccounts ? (
           <div className="hero-sub">History starts now — your net-worth chart draws itself as balances update over the coming days.</div>
         ) : null}
-      </div>
-
-      <div className="stat-row">
-        <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
-          <div className="stat-label">Cash</div>
-          <div className="stat-value money">{hasAccounts ? fmt(Math.round(cash)) : '—'}</div>
-          <div className="stat-sub">{accountCount(['checking', 'savings'])} accounts</div>
-        </div>
-        <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
-          <div className="stat-label">Investments</div>
-          <div className="stat-value money">{hasAccounts ? fmt(Math.round(invest)) : '—'}</div>
-          <div className="stat-sub">{accountCount(['brokerage', 'retirement', 'hsa', '529'])} accounts</div>
-        </div>
-        <div className="stat-tile" onClick={() => onNavigate('accounts')} role="button" tabIndex={0}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('accounts') } }}>
-          <div className="stat-label">Debt</div>
-          <div className="stat-value money">{hasAccounts ? fmt(Math.round(debt)) : '—'}</div>
-          <div className="stat-sub">{accountCount(['credit card', 'loan', 'mortgage'])} accounts</div>
-        </div>
       </div>
 
       {alerts.length > 0 && (
