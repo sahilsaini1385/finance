@@ -16,6 +16,8 @@ export const LIMITS_BY_YEAR = {
     hsaCatchUp: 1000,
     fsaHealth: 3300,
     standardDeduction: { single: 15750, mfj: 31500, hoh: 23625 },
+    // Roth IRA MAGI phase-out [start, end] (Rev. Proc. 2024-40)
+    rothPhaseOut: { single: [150000, 165000], mfj: [236000, 246000], hoh: [150000, 165000] },
   },
   2026: {
     year: 2026,
@@ -28,6 +30,8 @@ export const LIMITS_BY_YEAR = {
     hsaCatchUp: 1000,
     fsaHealth: 3400,
     standardDeduction: { single: 16100, mfj: 32200, hoh: 24150 },
+    // Roth IRA MAGI phase-out [start, end] (Rev. Proc. 2025-32)
+    rothPhaseOut: { single: [153000, 168000], mfj: [242000, 252000], hoh: [153000, 168000] },
   },
 }
 

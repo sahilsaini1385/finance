@@ -140,8 +140,32 @@ export function getRecommendations(state) {
   const ira = num(p.iraContribution)
   const iraLimit = L.ira + (age >= 50 ? L.iraCatchUp : 0)
   if (ira < iraLimit) {
-    push('tax', 'info', `IRA space available ($${iraLimit.toLocaleString()} limit for ${L.year})`,
-      `You've planned $${ira.toLocaleString()} of $${iraLimit.toLocaleString()}. If your income exceeds the Roth IRA phase-out, look into a backdoor Roth (contribute non-deductible traditional, then convert). Deadline is tax day of the following year.`)
+    // The app knows household income — resolve the Roth phase-out question
+    // instead of hedging with "if your income exceeds…". MAGI proxy: gross
+    // minus the pre-tax deferrals we know about (trad 401k, HSA); precise
+    // enough to place someone relative to a band, and the in-band message
+    // hedges where precision would actually matter.
+    const iraFiling = p.filingStatus || 'single'
+    const [phaseStart, phaseEnd] = L.rothPhaseOut[iraFiling] || L.rothPhaseOut.single
+    const tradK401 = facts.k401Deferrals?.pace ?? facts.k401Deferrals?.value ?? 0
+    const hsaPretax = facts.hsaStatus?.contribution?.value ?? num(p.hsaContribution)
+    const magiApprox = Math.max(0, householdIncome - tradK401 - hsaPretax)
+    const filingLabel = iraFiling.toUpperCase()
+    const planned = `You've planned $${ira.toLocaleString()} of $${iraLimit.toLocaleString()}.`
+    const deadline = 'Deadline is tax day of the following year.'
+    if (householdIncome <= 0) {
+      push('tax', 'info', `IRA space available ($${iraLimit.toLocaleString()} limit for ${L.year})`,
+        `${planned} If your income exceeds the Roth IRA phase-out, look into a backdoor Roth (contribute non-deductible traditional, then convert). ${deadline}`)
+    } else if (magiApprox > phaseEnd) {
+      push('tax', 'info', `IRA space available — use the backdoor ($${iraLimit.toLocaleString()} limit for ${L.year})`,
+        `${planned} Your household income (~$${Math.round(magiApprox).toLocaleString()} after pre-tax deferrals) is above the ${L.year} Roth IRA phase-out ($${phaseEnd.toLocaleString()} ${filingLabel}), so direct Roth contributions are out — use the backdoor Roth: contribute non-deductible traditional, then convert. Watch the pro-rata rule if you hold pre-tax traditional IRA balances. ${deadline}`)
+    } else if (magiApprox >= phaseStart) {
+      push('tax', 'info', `IRA space available ($${iraLimit.toLocaleString()} limit for ${L.year})`,
+        `${planned} Your household income (~$${Math.round(magiApprox).toLocaleString()} after pre-tax deferrals) falls inside the ${L.year} Roth phase-out ($${phaseStart.toLocaleString()}–$${phaseEnd.toLocaleString()} ${filingLabel}) — a partial direct Roth is allowed, but the backdoor Roth (non-deductible traditional, then convert) sidesteps the math entirely. ${deadline}`)
+    } else {
+      push('tax', 'info', `IRA space available ($${iraLimit.toLocaleString()} limit for ${L.year})`,
+        `${planned} Your household income (~$${Math.round(magiApprox).toLocaleString()}) is under the ${L.year} Roth IRA phase-out (starts at $${phaseStart.toLocaleString()} ${filingLabel}), so you can contribute directly to a Roth IRA — no backdoor needed. ${deadline}`)
+    }
   } else {
     push('tax', 'good', 'IRA maxed out', 'You\'re using your full IRA space this year.')
   }
