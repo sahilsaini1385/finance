@@ -1513,6 +1513,9 @@ textarea:focus-visible {
 .pos-text {
   color: var(--good-text);
 }
+.neg-text {
+  color: var(--critical-text, var(--warning-text));
+}
 .goal-numbers {
   font-size: 15px;
 }
