@@ -235,6 +235,30 @@ export function advisorSystemPrompt(contextJson) {
         'income or childcare the family would need to replace. Quantify recommendations in premium dollars ' +
         'saved or coverage dollars gained, using the premiums and coverage amounts in the snapshot.\n\n' +
 
+        'MORTGAGE PREPAY VS INVEST — treat prepayment as a bond, not a virtue. Every extra dollar of principal ' +
+        'earns the note rate, guaranteed, until payoff — home.prepayVsInvest carries the pre-tax and after-tax ' +
+        'return, the taxable-account breakeven, and a per-$100/month table for 5- and 10-year horizons; scale it ' +
+        'linearly to whatever amount the user asks about and answer in dollars of net worth at the horizon, not ' +
+        'percentages alone (home.payoff.outlook5y/outlook10y hold the interest actually incurred in those windows). ' +
+        'Frame the comparison honestly: prepayment is risk-free, so it competes with the BOND side of a portfolio, ' +
+        'which it beats outright at today\'s yields; against stocks it is a guaranteed return versus a risky ' +
+        'median — use web search for current 10-year capital-market forecasts (Vanguard, Morningstar, JPMorgan) ' +
+        'and current Treasury/HYSA yields rather than quoting the historical 10% for stocks, and say plainly that ' +
+        'forecasts are medians with wide ranges, not promises; 5-year windows are wider still, which is what the ' +
+        'guaranteed return insures against. Respect the priority ladder before recommending either: full employer ' +
+        '401(k) match first, then debt above ~8%, then a 3-6 month emergency fund from monthlyExpenses and cash ' +
+        'on hand, then unused 401(k)/HSA/IRA space (the deduction at their marginal rate usually beats the prepay ' +
+        'edge) — only cash with no better rung is a prepay-vs-taxable-investing question. Always name the two ' +
+        'costs of prepaying: liquidity (locked in the house until a sale, refi, or HELOC — never prepay the ' +
+        'emergency fund) and cash-flow rigidity (the required payment does not drop until the loan is gone; a ' +
+        'partially prepaid mortgage does not help in a job loss). For lump sums, mention recasting: after a large ' +
+        'principal payment most servicers will re-amortize for a small fee, lowering the required payment at the ' +
+        'same rate and term. Use afterTaxBasis from the snapshot for the tax interplay (itemizers lose part of ' +
+        'the interest deduction when they prepay; standard-deduction households keep the full rate) and state ' +
+        'your assumptions in one line. A rate this close to expected equity returns has no objectively right ' +
+        'answer — give the numbers, name the risk difference, and let a split (some extra principal, some ' +
+        'invested) be a first-class recommendation.\n\n' +
+
         'DATA PROVENANCE — the snapshot reconciles overlapping sources and labels each figure. ' +
         'Payroll-verified numbers (parsed pay statements) beat typed profile estimates; W-2 figures describe ' +
         'their labeled PRIOR tax year and must never be compared to current-year payroll without saying so. ' +

@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { putFile, deleteFile, openFile, getFile, formatBytes } from '../lib/files.js'
-import { amortize, extraPaymentScenarios, formatMonths } from '../lib/mortgage.js'
+import { amortizationSchedule, yearlyRollup, scenarioDelta, formatMonths } from '../lib/mortgage.js'
 import { localMonth } from '../lib/dates.js'
 import FileDrop from './FileDrop.jsx'
 import Icon from './Icon.jsx'
-import AreaChart from './AreaChart.jsx'
+import YearlyStackChart from './YearlyStackChart.jsx'
 import { useToast } from './Toaster.jsx'
 
 const HOME_DOC_KINDS = ['Mortgage note', 'Closing disclosure', 'Deed / title', 'Home insurance policy', 'Appraisal', 'Inspection report', 'Warranty', 'Renovation receipts', 'Other']
@@ -218,70 +218,9 @@ export default function Home() {
         </p>
       </div>
 
-      {num(home.mortgageBalance) > 0 && num(home.mortgageRate) > 0 && num(home.monthlyPayment) > 0 && (() => {
-        const { base, scenarios } = extraPaymentScenarios(home.mortgageBalance, home.mortgageRate, home.monthlyPayment)
-        return (
-          <div className="card">
-            <h2><span className="icon-chip"><Icon name="trending-up" /></span> Payoff dashboard</h2>
-            {!base.feasible ? (
-              <div className="alert warning">
-                <span className="alert-icon"><Icon name="alert-triangle" size={15} /></span>
-                <div>Can't project a payoff: {base.reason}. Double-check the rate and the monthly P&amp;I figure (exclude taxes/insurance).</div>
-              </div>
-            ) : (
-              <>
-                <div className="stat-row" style={{ marginTop: 0 }}>
-                  <div className="stat-tile" style={{ cursor: 'default' }}>
-                    <div className="stat-label">Paid off</div>
-                    <div className="stat-value money">
-                      {new Date(base.payoffDate + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })}
-                    </div>
-                    <div className="stat-sub">{formatMonths(base.months)} to go</div>
-                  </div>
-                  <div className="stat-tile" style={{ cursor: 'default' }}>
-                    <div className="stat-label">Interest remaining</div>
-                    <div className="stat-value money">{fmt(base.totalInterest)}</div>
-                    <div className="stat-sub">at {home.mortgageRate}% on {fmt(home.mortgageBalance)}</div>
-                  </div>
-                  <div className="stat-tile" style={{ cursor: 'default' }}>
-                    <div className="stat-label">This month's split</div>
-                    <div className="stat-value money">{fmt(num(home.mortgageBalance) * num(home.mortgageRate) / 1200)} int.</div>
-                    <div className="stat-sub">{fmt(Math.max(0, num(home.monthlyPayment) - num(home.mortgageBalance) * num(home.mortgageRate) / 1200))} to principal</div>
-                  </div>
-                </div>
-                <AreaChart
-                  id="payoff"
-                  points={base.series.map(p => {
-                    const d = new Date()
-                    d.setMonth(d.getMonth() + p.month)
-                    return { x: d.toLocaleString(undefined, { month: 'short', year: 'numeric' }), value: Math.round(p.balance) }
-                  })}
-                  height={120}
-                />
-                <table className="table" style={{ marginTop: 12 }}>
-                  <thead>
-                    <tr><th>Extra per month</th><th>Paid off</th><th className="num">Time saved</th><th className="num">Interest saved</th></tr>
-                  </thead>
-                  <tbody>
-                    {scenarios.map(s => (
-                      <tr key={s.extra}>
-                        <td>+{fmt(s.extra)}</td>
-                        <td className="small">{new Date(s.payoffDate + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })}</td>
-                        <td className="num">{formatMonths(s.monthsSaved)}</td>
-                        <td className="num pos-text">{fmt(s.interestSaved)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="muted small" style={{ marginBottom: 0 }}>
-                  P&amp;I only — taxes and insurance continue separately. Extra principal payments beat most
-                  guaranteed returns at today's rates, but max the 401(k) match and clear credit cards first.
-                </p>
-              </>
-            )}
-          </div>
-        )
-      })()}
+      {num(home.mortgageBalance) > 0 && num(home.mortgageRate) > 0 && num(home.monthlyPayment) > 0 && (
+        <PayoffDashboard home={home} />
+      )}
 
       <div className="grid-2-forms">
         <div className="card">
@@ -409,6 +348,181 @@ export default function Home() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// The mortgage payoff card: current-plan tiles, extra-payment scenario chips,
+// yearly principal/interest chart with avoided-years ghosts, and the yearly
+// amortization table (the chart's accessible data twin).
+function PayoffDashboard({ home }) {
+  const [chip, setChip] = useState(0) // 0 | 100 | 250 | 500 | 'custom'
+  const [custom, setCustom] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const bal = num(home.mortgageBalance)
+  const rate = num(home.mortgageRate)
+  const pay = num(home.monthlyPayment)
+  const extra = chip === 'custom' ? Math.max(0, num(custom)) : chip
+
+  const schedule = useMemo(() => amortizationSchedule(bal, rate, pay), [bal, rate, pay])
+  const scen = useMemo(
+    () => (schedule.feasible && extra > 0 ? amortizationSchedule(bal, rate, pay, extra) : null),
+    [bal, rate, pay, extra, schedule.feasible],
+  )
+
+  if (!schedule.feasible) {
+    return (
+      <div className="card">
+        <h2><span className="icon-chip"><Icon name="trending-up" /></span> Payoff dashboard</h2>
+        <div className="alert warning">
+          <span className="alert-icon"><Icon name="alert-triangle" size={15} /></span>
+          <div>Can't project a payoff: {schedule.reason}. Double-check the rate and the monthly P&amp;I figure (exclude taxes/insurance).</div>
+        </div>
+      </div>
+    )
+  }
+
+  const active = scen?.feasible ? scen : schedule
+  const delta = scen?.feasible ? scenarioDelta(schedule, scen) : null
+  const years = yearlyRollup(active.rows)
+  const first = schedule.rows[0]
+  const intSharePct = Math.round((first.interest / (first.interest + first.principal)) * 100)
+  const curYear = new Date().getFullYear()
+  const crossoverYear = active.crossoverDate ? Number(active.crossoverDate.slice(0, 4)) : null
+  const shownYears = expanded ? years : years.slice(0, 5)
+  const monthDate = m => new Date(m + '-02').toLocaleString(undefined, { month: 'short', year: 'numeric' })
+  const perTenK = 10000 * (Math.pow(1 + rate / 1200, 120) - 1)
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="trending-up" /></span> Payoff dashboard</h2>
+
+      <div className="stat-row" style={{ marginTop: 0 }}>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Paid off</div>
+          <div className="stat-value money">{monthDate(schedule.payoffDate)}</div>
+          <div className="stat-sub">{formatMonths(schedule.months)} to go</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Still to pay</div>
+          <div className="stat-value money">{fmt(schedule.totalPaid)}</div>
+          <div className="stat-sub">{fmt(bal)} principal + {fmt(schedule.totalInterest)} interest</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">This month's {fmt(pay)}</div>
+          <div className="stat-value money" style={{ fontSize: 16 }}>{fmt(first.interest)} interest · {fmt(first.principal)} principal</div>
+          <div style={{ display: 'flex', gap: 2, height: 8, margin: '6px 0 4px', borderRadius: 4, overflow: 'hidden' }} aria-hidden="true">
+            <div style={{ width: `${100 - intSharePct}%`, background: 'var(--series-1)' }} />
+            <div style={{ width: `${intSharePct}%`, background: 'var(--series-2)' }} />
+          </div>
+          <div className="stat-sub">{intSharePct}% of this payment is interest</div>
+        </div>
+      </div>
+
+      <div className="row gap wrap" role="radiogroup" aria-label="Extra principal per month" style={{ margin: '10px 0 4px' }}>
+        {[0, 100, 250, 500].map(v => (
+          <button
+            key={v}
+            className="chip"
+            role="radio"
+            aria-checked={chip === v}
+            style={chip === v ? { background: 'var(--accent-subtle)', borderColor: 'var(--accent)' } : undefined}
+            onClick={() => setChip(v)}
+          >
+            {v === 0 ? 'No extra' : `+$${v}/mo`}
+          </button>
+        ))}
+        <span className="row" style={{ alignItems: 'center', gap: 6 }}>
+          <button
+            className="chip"
+            role="radio"
+            aria-checked={chip === 'custom'}
+            style={chip === 'custom' ? { background: 'var(--accent-subtle)', borderColor: 'var(--accent)' } : undefined}
+            onClick={() => setChip('custom')}
+          >
+            Custom
+          </button>
+          {chip === 'custom' && (
+            <input
+              type="number" inputMode="decimal" min="0" step="50"
+              value={custom} onChange={e => setCustom(e.target.value)}
+              placeholder="$/mo" aria-label="Custom extra per month"
+              style={{ width: 90 }} autoFocus
+            />
+          )}
+        </span>
+      </div>
+      {delta && delta.monthsSaved > 0 && (
+        <p className="small money" style={{ margin: '2px 0 6px' }}>
+          Paid off {monthDate(delta.payoffDate)} · <span className="pos-text">{formatMonths(delta.monthsSaved)} sooner</span> ·{' '}
+          <span className="pos-text">{fmt(delta.interestSaved)} less interest</span>
+        </p>
+      )}
+
+      <YearlyStackChart
+        years={years}
+        ghostYears={delta?.ghostYears || []}
+        crossoverYear={crossoverYear}
+        scenarioActive={Boolean(delta)}
+      />
+
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table" style={{ marginTop: 12 }}>
+          <thead>
+            <tr><th>Year</th><th className="num">Payments</th><th className="num">Principal</th><th className="num">Interest</th><th className="num">End balance</th></tr>
+          </thead>
+          <tbody>
+            {shownYears.map(y => (
+              <tr key={y.year} style={y.year === curYear ? { background: 'var(--tint-accent)' } : undefined}>
+                <td>
+                  {y.year}
+                  {y.monthsCount < 12 && <span className="small muted"> · {y.monthsCount} pmts</span>}
+                </td>
+                <td className="num">{y.monthsCount}</td>
+                <td
+                  className={y.year === crossoverYear ? 'num pos-text' : 'num'}
+                  title={y.year === crossoverYear ? 'first year most of your payment buys equity' : undefined}
+                >
+                  {fmt(y.principal)}
+                </td>
+                <td className="num">{fmt(y.interest)}</td>
+                <td className="num">{fmt(y.endBalance)}</td>
+              </tr>
+            ))}
+            {years.length > 5 && (
+              <tr>
+                <td colSpan={5}>
+                  <button className="btn ghost small" onClick={() => setExpanded(e => !e)}>
+                    {expanded ? 'Collapse' : `Show all ${years.length} years (${years[0].year}–${years[years.length - 1].year})`}
+                  </button>
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 600, borderTop: '1px solid var(--border-strong)' }}>
+              <td>Total remaining</td>
+              <td className="num">{active.months}</td>
+              <td className="num">{fmt(active.totalPrincipal)}</td>
+              <td className="num">{fmt(active.totalInterest)}</td>
+              <td className="num">{fmt(0)}</td>
+            </tr>
+            {delta && delta.monthsSaved > 0 && (
+              <tr>
+                <td colSpan={5} className="small pos-text">
+                  vs current plan: {fmt(delta.interestSaved)} less interest · paid off {formatMonths(delta.monthsSaved)} sooner
+                </td>
+              </tr>
+            )}
+          </tfoot>
+        </table>
+      </div>
+
+      <p className="muted small" style={{ marginBottom: 0 }}>
+        P&amp;I only — taxes and insurance continue separately. Every extra dollar of principal earns a guaranteed{' '}
+        {rate}% until payoff — about {fmt(perTenK)} of interest avoided per $10,000 prepaid over 10 years. Ask the
+        Advisor whether prepaying or investing wins for you; max the 401(k) match and clear credit cards first.
+      </p>
     </div>
   )
 }
