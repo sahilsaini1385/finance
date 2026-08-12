@@ -120,13 +120,15 @@ export function ssAnnualAtClaim(params, claimAge = params.ssClaimAge) {
 // year's return, which is how Monte Carlo plugs in.
 export function projectPath(params, returnFor, claimAge = params.ssClaimAge) {
   const ssAnnual = ssAnnualAtClaim(params, claimAge)
+  // Contributions may vary by age (scenario phases); constant by default.
+  const contribAt = params.contribAt || (() => params.annualContrib)
   let bal = params.savings
   const series = [{ age: params.age, value: bal }]
   let depletedAt = null
   for (let a = params.age + 1; a <= params.lifeExpectancy; a++) {
     bal *= 1 + returnFor(a)
     if (a <= params.retireAge) {
-      bal += params.annualContrib
+      bal += contribAt(a)
     } else {
       let need = params.spendingAnnual - params.pensionAnnual - (a >= claimAge ? ssAnnual : 0)
       if (need > 0) bal -= need
