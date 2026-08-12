@@ -82,13 +82,21 @@ The design rule that makes scaling cheap: **`store.jsx` is the single persistenc
 their SimpleFIN subscription, their data. One shared proxy worker (lock `ALLOWED_ORIGIN` to the app
 origin). No accounts, no liability for user data.
 
-**Phase 2 — hosted sync (free tiers).** Add sign-in and cross-device sync:
-- Auth + Postgres via Supabase (free tier) — tables mirror the data model above, one row per entity,
-  `user_id` + row-level security.
-- Replace the `localStorage` read/write in `store.jsx` with an API adapter (load on boot, debounced
-  writes). Keep localStorage as offline cache.
-- Move SimpleFIN access URLs server-side, encrypted at rest; a scheduled worker (Cloudflare Cron
-  trigger) runs `fetchAccounts` + `buildSyncPatch` per user nightly — both already pure/portable.
+**Phase 2 — family sync (SHIPPED, free tier).** Cross-device sync via `lib/familySync.js`, refined
+from the original sketch to keep the privacy story intact:
+- **End-to-end encrypted blob, not per-entity rows.** The whole state document is AES-GCM-encrypted
+  client-side with a key derived (PBKDF2, 310k iters) from a family passphrase; the user's own
+  Supabase project stores one ciphertext row per household (`budgie_sync`: household/version/
+  ciphertext). Supabase never sees plaintext; there is no sign-in — the household id is derived from
+  the passphrase, so a second device joins by entering the same project URL + anon key + passphrase.
+- **Local-first preserved.** localStorage remains the source the app boots from; the engine
+  (debounced push on change, pull on focus + 60s poll) syncs opportunistically. Optimistic
+  concurrency on the version column; on conflict, a 3-way merge against the last-synced snapshot —
+  entity arrays merge by id (edits beat deletes), scalars resolve local-wins — then retry.
+- **Per-device vs shared:** `connections.claude` (advisor credential) and `connections.familySync`
+  never cross the wire; the SimpleFIN access URL does (encrypted), so both phones can bank-sync.
+  IndexedDB file blobs stay device-local, same as the JSON backup.
+- Still open from the sketch: a scheduled worker for nightly bank sync (both cores remain pure).
 
 **Phase 3 — product.** Stripe billing (bundle the SimpleFIN cost), token vault/KMS for access URLs,
 per-institution sync health dashboards, audit logging, SOC2 posture. The advisor rules engine

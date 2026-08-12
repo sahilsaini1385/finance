@@ -1,0 +1,308 @@
+// Family sync — two phones, one household, end-to-end encrypted.
+//
+// The whole app state (the same single JSON document localStorage holds) is
+// AES-GCM-encrypted CLIENT-SIDE with a key derived from a family passphrase,
+// then stored as one row in the user's own Supabase project. Supabase only
+// ever sees ciphertext; the passphrase never leaves the devices. Both phones
+// enter the same three values (project URL, anon key, passphrase) — the
+// household id is derived from the passphrase, so "joining" is just typing
+// the same secret.
+//
+// Sync model: optimistic concurrency on a version column, with a 3-way merge
+// against the last-synced snapshot when both devices changed. Entity arrays
+// (accounts, transactions, goals, …) merge by id — edits beat deletes; for a
+// scalar both sides changed, the local device wins (deterministic; its push
+// then propagates). Local-first is preserved: the app works fully offline
+// and syncs when it can.
+//
+// Excluded from the payload: connections.claude (the advisor credential is
+// per-device — the bridge runs on one computer) and connections.familySync
+// itself (each device keeps its own config). Uploaded document FILES live in
+// IndexedDB and do not sync — same limitation as the JSON backup.
+
+const enc = new TextEncoder()
+const dec = new TextDecoder()
+
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
+const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0))
+
+const subtle = () => globalThis.crypto.subtle
+
+// ---------- key derivation ----------
+// Salt is deterministic per Supabase project so both phones derive identical
+// keys from the passphrase alone. PBKDF2-SHA256, 310k iterations.
+export async function deriveKeys(passphrase, supabaseUrl) {
+  const salt = enc.encode(`budgie-family-sync-v1|${new URL(supabaseUrl).host}`)
+  const material = await subtle().importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveBits'])
+  const bits = await subtle().deriveBits({ name: 'PBKDF2', salt, iterations: 310000, hash: 'SHA-256' }, material, 256)
+  const idDigest = await subtle().digest('SHA-256', enc.encode(`budgie-household|${passphrase}|${new URL(supabaseUrl).host}`))
+  const householdId = [...new Uint8Array(idDigest)].slice(0, 16).map(x => x.toString(16).padStart(2, '0')).join('')
+  return { keyB64: b64(bits), householdId }
+}
+
+async function aesKey(keyB64, usages) {
+  return subtle().importKey('raw', unb64(keyB64), { name: 'AES-GCM' }, false, usages)
+}
+
+export async function encryptState(obj, keyB64) {
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12))
+  const key = await aesKey(keyB64, ['encrypt'])
+  const ct = await subtle().encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)))
+  const out = new Uint8Array(iv.length + ct.byteLength)
+  out.set(iv, 0)
+  out.set(new Uint8Array(ct), iv.length)
+  return b64(out)
+}
+
+export async function decryptState(payloadB64, keyB64) {
+  const raw = unb64(payloadB64)
+  const key = await aesKey(keyB64, ['decrypt'])
+  const pt = await subtle().decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, key, raw.slice(12))
+  return JSON.parse(dec.decode(pt))
+}
+
+// ---------- Supabase REST (plain fetch, no SDK) ----------
+const TABLE = 'budgie_sync'
+
+export const SETUP_SQL = `create table if not exists ${TABLE} (
+  household text primary key,
+  version bigint not null,
+  ciphertext text not null,
+  updated_at timestamptz default now()
+);
+alter table ${TABLE} enable row level security;
+create policy "budgie anon rw" on ${TABLE}
+  for all to anon using (true) with check (true);`
+
+function sbHeaders(cfg) {
+  return {
+    apikey: cfg.anonKey,
+    Authorization: `Bearer ${cfg.anonKey}`,
+    'Content-Type': 'application/json',
+  }
+}
+
+export async function sbPull(cfg, fetchImpl = globalThis.fetch) {
+  const res = await fetchImpl(
+    `${cfg.url.replace(/\/$/, '')}/rest/v1/${TABLE}?household=eq.${cfg.householdId}&select=version,ciphertext`,
+    { headers: sbHeaders(cfg) },
+  )
+  if (!res.ok) throw new Error(`Supabase pull failed (${res.status}) — is the ${TABLE} table created?`)
+  const rows = await res.json()
+  return rows[0] || null
+}
+
+// Returns true on success, false on version conflict (someone else pushed).
+export async function sbPush(cfg, baseVersion, ciphertext, fetchImpl = globalThis.fetch) {
+  const base = cfg.url.replace(/\/$/, '')
+  if (baseVersion === 0) {
+    const res = await fetchImpl(`${base}/rest/v1/${TABLE}`, {
+      method: 'POST',
+      headers: { ...sbHeaders(cfg), Prefer: 'return=minimal' },
+      body: JSON.stringify({ household: cfg.householdId, version: 1, ciphertext }),
+    })
+    if (res.status === 409) return false // row appeared since our pull
+    if (!res.ok) throw new Error(`Supabase insert failed (${res.status})`)
+    return true
+  }
+  const res = await fetchImpl(
+    `${base}/rest/v1/${TABLE}?household=eq.${cfg.householdId}&version=eq.${baseVersion}`,
+    {
+      method: 'PATCH',
+      headers: { ...sbHeaders(cfg), Prefer: 'return=representation' },
+      body: JSON.stringify({ version: baseVersion + 1, ciphertext, updated_at: new Date().toISOString() }),
+    },
+  )
+  if (!res.ok) throw new Error(`Supabase update failed (${res.status})`)
+  const rows = await res.json()
+  return rows.length > 0 // zero rows matched → our base version is stale
+}
+
+// ---------- 3-way merge ----------
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v)
+const isEntityArray = v => Array.isArray(v) && v.length > 0 && v.every(x => isObj(x) && x.id !== undefined)
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+// Entity arrays merge by id. Edits beat deletes; remote order wins, local-only
+// entities append in local order.
+function mergeEntities(base = [], local, remote) {
+  const byId = arr => new Map(arr.map(x => [x.id, x]))
+  const b = byId(base), l = byId(local), r = byId(remote)
+  const out = []
+  const seen = new Set()
+  for (const [id, rv] of r) {
+    seen.add(id)
+    if (l.has(id)) {
+      out.push(threeWayMerge(b.get(id), l.get(id), rv))
+    } else if (b.has(id)) {
+      // deleted locally; keep only if remote changed it since base (edit beats delete)
+      if (!eq(b.get(id), rv)) out.push(rv)
+    } else {
+      out.push(rv) // added remotely
+    }
+  }
+  for (const [id, lv] of l) {
+    if (seen.has(id)) continue
+    if (b.has(id)) {
+      if (!eq(b.get(id), lv)) out.push(lv) // deleted remotely, edited locally
+    } else {
+      out.push(lv) // added locally
+    }
+  }
+  return out
+}
+
+export function threeWayMerge(base, local, remote) {
+  if (eq(local, remote)) return local
+  if (eq(local, base)) return remote
+  if (eq(remote, base)) return local
+  if (isEntityArray(local) || isEntityArray(remote)) {
+    if (Array.isArray(local) && Array.isArray(remote)) {
+      return mergeEntities(Array.isArray(base) ? base : [], local, remote)
+    }
+  }
+  if (isObj(local) && isObj(remote)) {
+    const keys = new Set([...Object.keys(local), ...Object.keys(remote)])
+    const out = {}
+    for (const k of keys) {
+      const merged = threeWayMerge(isObj(base) ? base?.[k] : undefined, local[k], remote[k])
+      if (merged !== undefined) out[k] = merged
+    }
+    return out
+  }
+  return local // both changed a scalar differently: this device wins, then propagates
+}
+
+// ---------- payload shaping ----------
+// What crosses the wire: everything except per-device connections.
+export function toSyncedPayload(state) {
+  const { claude, familySync, ...sharedConns } = state.connections || {}
+  return { ...state, connections: sharedConns }
+}
+
+export function fromSyncedPayload(payload, localState) {
+  return {
+    ...payload,
+    connections: {
+      ...(payload.connections || {}),
+      claude: localState.connections?.claude ?? null,
+      familySync: localState.connections?.familySync ?? null,
+    },
+  }
+}
+
+// ---------- the engine ----------
+const BASE_KEY = 'finance-sync-base-v1' // {version, snapshot} — last synced payload
+
+export function createFamilySyncEngine({
+  getState,
+  apply, // (fullMergedState) => void  — dispatches HYDRATE
+  onStatus = () => {},
+  emptyState, // initialState: the 3-way base when no snapshot exists yet
+  fetchImpl = (...a) => globalThis.fetch(...a),
+  storage = globalThis.localStorage,
+  debounceMs = 2500,
+  intervalMs = 60000,
+} = {}) {
+  let cfg = null
+  let timer = null
+  let poll = null
+  let running = false
+  let syncing = false
+  let queued = false
+  const status = { state: 'idle', lastSync: null, version: 0, error: null }
+
+  const emit = () => onStatus({ ...status })
+  const loadBase = () => {
+    try {
+      const raw = storage.getItem(BASE_KEY)
+      if (raw) return JSON.parse(raw)
+    } catch { /* fresh */ }
+    return { version: 0, snapshot: null }
+  }
+  const saveBase = b => storage.setItem(BASE_KEY, JSON.stringify(b))
+
+  async function syncNow() {
+    if (!cfg || syncing) { queued = syncing; return }
+    syncing = true
+    status.state = 'syncing'
+    status.error = null
+    emit()
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const basum = loadBase()
+        const localPayload = toSyncedPayload(getState())
+        const remoteRow = await sbPull(cfg, fetchImpl)
+
+        if (!remoteRow) {
+          // First device: publish the household.
+          const ok = await sbPush(cfg, 0, await encryptState(localPayload, cfg.keyB64), fetchImpl)
+          if (ok) { saveBase({ version: 1, snapshot: localPayload }); status.version = 1; break }
+          continue // raced another device creating the row — re-pull
+        }
+
+        let merged = localPayload
+        if (remoteRow.version !== basum.version) {
+          const remotePayload = await decryptState(remoteRow.ciphertext, cfg.keyB64)
+          const baseSnap = basum.snapshot ?? toSyncedPayload(emptyState)
+          merged = threeWayMerge(baseSnap, localPayload, remotePayload)
+          if (!eq(merged, localPayload)) apply(fromSyncedPayload(merged, getState()))
+          if (eq(merged, remotePayload)) {
+            // Nothing of ours to add — adopt remote as the new base and stop.
+            saveBase({ version: remoteRow.version, snapshot: remotePayload })
+            status.version = remoteRow.version
+            break
+          }
+        } else if (eq(localPayload, basum.snapshot)) {
+          status.version = basum.version
+          break // nothing changed anywhere
+        }
+
+        const ok = await sbPush(cfg, remoteRow.version, await encryptState(merged, cfg.keyB64), fetchImpl)
+        if (ok) {
+          saveBase({ version: remoteRow.version + 1, snapshot: merged })
+          status.version = remoteRow.version + 1
+          break
+        }
+        // conflict — loop pulls again and re-merges
+      }
+      status.state = 'idle'
+      status.lastSync = new Date().toISOString()
+    } catch (e) {
+      status.state = 'error'
+      status.error = e.message || String(e)
+    }
+    syncing = false
+    emit()
+    if (queued) { queued = false; syncNow() }
+  }
+
+  return {
+    configure(nextCfg) {
+      const was = Boolean(cfg)
+      cfg = nextCfg || null
+      if (cfg && !running) {
+        running = true
+        poll = setInterval(() => syncNow(), intervalMs)
+        syncNow()
+      } else if (!cfg && running) {
+        running = false
+        clearInterval(poll)
+        clearTimeout(timer)
+        try { storage.removeItem(BASE_KEY) } catch { /* noop */ }
+      } else if (cfg && was) {
+        syncNow() // config changed (e.g. re-keyed) — resync
+      }
+    },
+    notifyLocalChange() {
+      if (!cfg) return
+      const base = loadBase()
+      // Skip the echo of our own apply(): payload identical to the base snapshot.
+      if (base.snapshot && eq(toSyncedPayload(getState()), base.snapshot)) return
+      clearTimeout(timer)
+      timer = setTimeout(() => syncNow(), debounceMs)
+    },
+    syncNow,
+    get status() { return { ...status } },
+  }
+}
