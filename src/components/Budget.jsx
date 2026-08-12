@@ -31,9 +31,13 @@ function suggestions(transactions, thisMonth) {
   const totals = {}
   for (const t of transactions) {
     const m = t.date?.slice(0, 7)
-    if (!months.includes(m) || t.amount >= 0 || EXCLUDED.includes(t.category)) continue
-    withData.add(m)
-    totals[t.category] = (totals[t.category] || 0) + -t.amount
+    if (!months.includes(m)) continue
+    // Split-aware: each piece counts toward its own category (tx.js rule).
+    for (const p of txParts(t)) {
+      if (p.amount >= 0 || EXCLUDED.includes(p.category)) continue
+      withData.add(m)
+      totals[p.category] = (totals[p.category] || 0) + -p.amount
+    }
   }
   const divisor = Math.max(1, withData.size)
   const out = {}

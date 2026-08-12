@@ -11,6 +11,8 @@
 // back to the plain linear split. The assumption is always surfaced in the
 // UI — never silently baked in.
 
+import { localToday } from './dates.js'
+
 const num = v => {
   const n = parseFloat(v)
   return Number.isNaN(n) ? 0 : n
@@ -32,7 +34,7 @@ export function monthsUntil(dateStr, todayStr) {
 // → { saved, target, remaining, pace, neededMonthly, monthsLeft, etaMonths,
 //     etaLabel, status: 'done'|'on-track'|'behind'|'pacing'|'stalled'|'no-data' }
 export function goalPace(state, goal, todayStr) {
-  const today = todayStr || new Date().toISOString().slice(0, 10)
+  const today = todayStr || localToday()
   const ids = new Set((goal.accountIds || []).filter(id => (state.accounts || []).some(a => a.id === id)))
   const saved = (state.accounts || []).filter(a => ids.has(a.id)).reduce((s, a) => s + num(a.balance), 0)
   const target = num(goal.target)

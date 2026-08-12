@@ -323,7 +323,16 @@ export function StoreProvider({ children }) {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
-        let merged = { ...init, ...parsed, profile: { ...init.profile, ...(parsed.profile || {}) } }
+        // Same nested-defaults merge as HYDRATE: data saved before a nested
+        // field existed must not leave it undefined (controlled inputs break).
+        let merged = {
+          ...init,
+          ...parsed,
+          profile: { ...init.profile, ...(parsed.profile || {}) },
+          home: { ...init.home, ...(parsed.home || {}) },
+          budgetConfig: { ...init.budgetConfig, ...(parsed.budgetConfig || {}) },
+          retirement: { ...init.retirement, ...(parsed.retirement || {}) },
+        }
         // One-time data migrations, flagged so they never re-run.
         if (!merged.migrations?.amazonCategory) {
           const { transactions } = migrateAmazonCategory(merged.transactions, merged.rules)

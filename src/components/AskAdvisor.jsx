@@ -208,9 +208,10 @@ export default function AskAdvisor() {
             <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a> on your own
             computer via a small bridge script:{' '}
             <a href="/budgie-bridge.py" download>download budgie-bridge.py</a>, then in Terminal run{' '}
-            <code>python3 ~/Downloads/budgie-bridge.py</code> and keep that window open. If your browser asks
-            to “access devices on your local network”, choose <strong>Allow</strong> — that’s this page talking
-            to the bridge.{' '}
+            <code style={{ userSelect: 'all' }}>BUDGIE_ORIGIN={window.location.origin} python3 ~/Downloads/budgie-bridge.py</code>{' '}
+            and keep that window open (the BUDGIE_ORIGIN part locks the bridge so only this app can use it).
+            If your browser asks to “access devices on your local network”, choose <strong>Allow</strong> —
+            that’s this page talking to the bridge.{' '}
             <button className="btn primary small" onClick={connectBridge} disabled={probing}>
               {probing ? 'Looking for bridge…' : 'Use my Claude subscription'}
             </button>
