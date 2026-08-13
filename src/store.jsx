@@ -3,7 +3,7 @@ import { computeTotals } from './lib/advisor.js'
 import { localToday, localMonth } from './lib/dates.js'
 import { buildMonthlyReport, reportHasData } from './lib/report.js'
 import { scanForTransfers, SCAN_VERSION } from './lib/transfers.js'
-import { migrateAmazonCategory } from './lib/categorize.js'
+import { applyDataMigrations } from './lib/migrations.js'
 import { createFamilySyncEngine } from './lib/familySync.js'
 
 const STORAGE_KEY = 'finance-app-v1'
@@ -83,7 +83,10 @@ export const initialState = {
 function reducer(state, action) {
   switch (action.type) {
     case 'HYDRATE':
-      return {
+      // Migrations re-check here too: a sync pull from a device running an
+      // older build must not reintroduce pre-migration data. Flags make it a
+      // no-op when the payload is already migrated.
+      return applyDataMigrations({
         ...initialState,
         ...action.payload,
         profile: { ...initialState.profile, ...(action.payload.profile || {}) },
@@ -91,7 +94,7 @@ function reducer(state, action) {
         budgetConfig: { ...initialState.budgetConfig, ...(action.payload.budgetConfig || {}) },
         retirement: { ...initialState.retirement, ...(action.payload.retirement || {}) },
         rsu: { ...initialState.rsu, ...(action.payload.rsu || {}) },
-      }
+      })
     case 'ADD_ACCOUNT':
       return { ...state, accounts: [...state.accounts, action.payload] }
     case 'UPDATE_ACCOUNT':
@@ -364,11 +367,7 @@ export function StoreProvider({ children }) {
           rsu: { ...init.rsu, ...(parsed.rsu || {}) },
         }
         // One-time data migrations, flagged so they never re-run.
-        if (!merged.migrations?.amazonCategory) {
-          const { transactions } = migrateAmazonCategory(merged.transactions, merged.rules)
-          merged = { ...merged, transactions, migrations: { ...(merged.migrations || {}), amazonCategory: true } }
-        }
-        return merged
+        return applyDataMigrations(merged)
       }
     } catch (e) {
       console.error('Failed to load saved data', e)
