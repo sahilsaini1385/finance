@@ -4,3 +4,4 @@ dist
 *.local
 __pycache__/
 tests/fixtures/private/
+tests/ui/*.png
