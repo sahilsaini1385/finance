@@ -90,7 +90,7 @@ export default function Budget() {
   const [openCat, setOpenCat] = useState(null)
 
   const budgets = effectiveBudgets(state, month)
-  const { income, spentByCat, needsReview } = useMemo(() => monthActivity(state, month), [state.transactions, month])
+  const { income, spentByCat, grossByCat, refundByCat, needsReview } = useMemo(() => monthActivity(state, month), [state.transactions, month])
   const sts = useMemo(() => computeSafeToSpend(state, month), [state, month])
   const stubNet = useMemo(() => paystubMonthlyNetMedian(state, month), [state.paystubs, month])
   const afterTaxMonthly = useMemo(() => {
@@ -300,7 +300,27 @@ export default function Budget() {
             </div>
           )}
         </td>
-        <td className="num">{s > 0 ? fmt(s) : '—'}</td>
+        <td className="num">
+          {s > 0 ? (
+            <>
+              {fmt(s)}
+              {(refundByCat[cat] || 0) > 0.5 && (
+                <div className="small muted money" style={{ fontWeight: 400 }}>
+                  after {fmt(refundByCat[cat])} credits
+                </div>
+              )}
+            </>
+          ) : (grossByCat[cat] || 0) > 0 ? (
+            // Refunds/credits met or beat the charges, so the envelope nets to
+            // zero — say so, or the row looks broken next to its transactions.
+            <>
+              $0
+              <div className="small money" style={{ fontWeight: 400, color: 'var(--warning-text)' }}>
+                {fmt(grossByCat[cat])} spent − {fmt(refundByCat[cat] || 0)} credits
+              </div>
+            </>
+          ) : '—'}
+        </td>
         <td className="num small" style={proj && proj > availBudget ? { color: 'var(--warning-text)', fontWeight: 600 } : undefined}>
           {proj !== null && Math.abs(proj - s) > 1 ? `→ ${fmt(proj)}` : ''}
         </td>
