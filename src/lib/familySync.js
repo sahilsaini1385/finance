@@ -82,14 +82,47 @@ function sbHeaders(cfg) {
   }
 }
 
+// Normalize whatever the user pastes into the project API base URL.
+// People copy the dashboard address (supabase.com/dashboard/project/<ref>/…)
+// at least as often as the API one — derive the right URL from it.
+export function normalizeSupabaseUrl(input) {
+  const raw = String(input || '').trim().replace(/\/+$/, '')
+  const dash = raw.match(/supabase\.com\/dashboard\/project\/([a-z0-9-]+)/i)
+  if (dash) return `https://${dash[1]}.supabase.co`
+  if (/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)/i.test(raw)) return raw.replace(/\/rest\b.*$/, '')
+  if (/supabase\.com/i.test(raw)) return null // some other supabase.com page — can't derive the project
+  return raw // self-hosted PostgREST etc.
+}
+
 export async function sbPull(cfg, fetchImpl = globalThis.fetch) {
   const res = await fetchImpl(
     `${cfg.url.replace(/\/$/, '')}/rest/v1/${TABLE}?household=eq.${cfg.householdId}&select=version,ciphertext`,
     { headers: sbHeaders(cfg) },
   )
-  if (!res.ok) throw new Error(`Supabase pull failed (${res.status}) — is the ${TABLE} table created?`)
+  if (!res.ok) {
+    const err = new Error(
+      res.status === 404
+        ? `The ${TABLE} table isn't there yet (404). In Supabase, open SQL Editor, run the setup snippet, then hit Sync now.`
+        : res.status === 401 || res.status === 403
+          ? `Supabase rejected the key (${res.status}). Re-copy the anon public key from the project's Settings → API.`
+          : `Supabase pull failed (${res.status}).`,
+    )
+    err.status = res.status
+    throw err
+  }
   const rows = await res.json()
   return rows[0] || null
+}
+
+// Pre-connect check: is this URL + key + table actually reachable?
+export async function probeConnection(cfg, fetchImpl = globalThis.fetch) {
+  try {
+    await sbPull(cfg, fetchImpl)
+    return { ok: true }
+  } catch (e) {
+    const reason = e.status === 404 ? 'table-missing' : e.status === 401 || e.status === 403 ? 'bad-key' : 'network'
+    return { ok: false, reason, message: e.message || String(e) }
+  }
 }
 
 // Returns true on success, false on version conflict (someone else pushed).
