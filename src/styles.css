@@ -1005,6 +1005,39 @@ textarea:focus-visible {
   margin-top: 2px;
 }
 
+/* ---------- modal ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  width: 100%;
+  max-width: 620px;
+  padding: 18px 20px;
+  margin: auto 0;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.modal select {
+  max-width: 190px;
+}
+
 .badge {
   font-size: 11px;
   font-weight: 600;

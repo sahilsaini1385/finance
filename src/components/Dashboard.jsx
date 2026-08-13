@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, fmt } from '../store.jsx'
-import { computeTotals, getRecommendations } from '../lib/advisor.js'
+import { computeTotals, getRecommendations, accountBucket } from '../lib/advisor.js'
 import { monthActivity } from '../lib/budget.js'
 import { localMonth } from '../lib/dates.js'
 import { detectRecurring, upcomingBills } from '../lib/savings.js'
 import { rsuSummary } from '../lib/rsu.js'
 import { txParts } from '../lib/tx.js'
 import ConflictBanner from './ConflictBanner.jsx'
+import BucketConfig from './BucketConfig.jsx'
 import Icon from './Icon.jsx'
 
 // Cut preview text at a word boundary — mid-word cuts ("(avalan…") read broken.
@@ -128,6 +129,7 @@ export default function Dashboard({ onNavigate }) {
   const debt = useCountUp(totals.debt)
   const homeEquity = useCountUp(totals.homeEquity)
   const rsu = useMemo(() => rsuSummary(state), [state.rsu])
+  const [bucketsOpen, setBucketsOpen] = useState(false)
 
   // Chart points: daily snapshots, downsampled to one per ISO week past 240
   // points so years of history stay a light SVG path. First and last raw
@@ -151,8 +153,8 @@ export default function Dashboard({ onNavigate }) {
     }))
   }, [state.history])
 
-  const accountCount = type => {
-    const n = state.accounts.filter(a => type.includes(a.type)).length
+  const bucketCount = bucket => {
+    const n = state.accounts.filter(a => !a.excludeFromNetWorth && accountBucket(a) === bucket).length
     return `${n} account${n === 1 ? '' : 's'}`
   }
 
@@ -201,20 +203,25 @@ export default function Dashboard({ onNavigate }) {
         </div>
         {!hasAccounts && <div className="hero-sub">Add an account to start</div>}
         {(() => {
-          const go = () => onNavigate('accounts')
-          const key = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go() } }
-          const cell = (label, value, sub) => (
-            <div className="hs-cell" role="button" tabIndex={0} onClick={go} onKeyDown={key} aria-label={`${label} — open Accounts`}>
-              <div className="stat-label">{label}</div>
-              <div className="stat-value sm money">{hasAccounts ? fmt(Math.round(value)) : '—'}</div>
-              <div className="stat-sub">{sub}</div>
-            </div>
-          )
+          const cell = (label, value, sub, onClick, aria) => {
+            const go = onClick || (() => onNavigate('accounts'))
+            return (
+              <div className="hs-cell" role="button" tabIndex={0} onClick={go}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go() } }}
+                aria-label={aria || `${label} — open Accounts`}>
+                <div className="stat-label">{label}{onClick && <Icon name="settings" size={10} />}</div>
+                <div className="stat-value sm money">{hasAccounts ? fmt(Math.round(value)) : '—'}</div>
+                <div className="stat-sub">{sub}</div>
+              </div>
+            )
+          }
+          const openBuckets = () => setBucketsOpen(true)
+          const cfg = label => `${label} — choose which accounts count`
           return (
             <div className="hero-stats">
-              {cell('Cash', cash, `${accountCount(['checking', 'savings'])}${totals.other !== 0 ? ` · ${fmt(totals.other)} other` : ''}`)}
-              {cell('Investments', taxableInvest, `${accountCount(['brokerage', 'hsa', '529'])}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} unvested excluded` : ''}`)}
-              {totals.retirementInvest !== 0 && cell('Retirement', retireInvest, accountCount(['retirement']))}
+              {cell('Cash', cash, `${bucketCount('cash')}${totals.other !== 0 ? ` · ${fmt(totals.other)} other` : ''}`, openBuckets, cfg('Cash'))}
+              {cell('Investments', taxableInvest, `${bucketCount('investments')}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} unvested excluded` : ''}`, openBuckets, cfg('Investments'))}
+              {totals.retirementInvest !== 0 && cell('Retirement', retireInvest, bucketCount('retirement'), openBuckets, cfg('Retirement'))}
               {totals.homeEquity !== 0 && cell('Home equity', homeEquity, 'included in net worth')}
               {rsu.totalUnvestedValue > 0 && (
                 <div className="hs-cell" role="button" tabIndex={0} aria-label="Unvested RSUs — open Income"
@@ -225,10 +232,11 @@ export default function Dashboard({ onNavigate }) {
                   <div className="stat-sub">not in net worth · vest through {rsu.lastVestYear}</div>
                 </div>
               )}
-              {cell('Debt', debt, accountCount(['credit card', 'loan', 'mortgage']))}
+              {cell('Debt', debt, bucketCount('debt'))}
             </div>
           )
         })()}
+        {bucketsOpen && <BucketConfig onClose={() => setBucketsOpen(false)} />}
         {state.history.length >= 2 ? (
           <>
             <AreaChart id="nw" points={chartPoints} height={64} />
