@@ -7,6 +7,10 @@
 //     a 7-day window → both sides are Transfers. Works regardless of wording.
 //  2. Keyword fallback: card-payment phrasing for when only one side of the
 //     pair is synced (e.g. the card account isn't connected).
+//  3. Large-credit heuristic: a big positive amount on a credit-card account
+//     with no matching charge on the same card is a payment or statement
+//     credit, not a category refund — even when auto-categorization filed it
+//     under a spending category (a $10k "Dining refund" is a card payment).
 //
 // Every examined transaction is stamped pairChecked so the scan is one-shot
 // per transaction and never fights a category the user set afterwards.
@@ -34,15 +38,21 @@ import { isSplit } from './tx.js'
 const DAY = 86400000
 const WINDOW_DAYS = 7
 
-// Bump when TRANSFER_RE gains patterns: previously-scanned transactions get a
-// keyword-only re-sweep (never pair re-matching, so a category the user chose
-// after the first scan is never overridden).
-export const SCAN_VERSION = 2
+// Bump when TRANSFER_RE gains patterns or a new layer lands: previously-
+// scanned transactions get a re-sweep of the stateless layers (never pair
+// re-matching, so a category the user chose after the first scan is never
+// overridden). v3: large-credit heuristic on credit-card accounts.
+export const SCAN_VERSION = 3
+
+// How big a lone credit-card credit must be before it's presumed a payment.
+// Real merchant refunds this large match an earlier charge on the same card;
+// rewards/statement credits run far smaller.
+const CC_PAYMENT_MIN = 500
 
 // Returns { transferIds: string[], checkedIds: string[] }
 // - transferIds: transactions to recategorize as Transfers
 // - checkedIds: every transaction examined this pass (stamp pairChecked)
-export function scanForTransfers(transactions) {
+export function scanForTransfers(transactions, accounts = []) {
   const fresh = transactions.filter(t => !t.pairChecked)
   const stale = transactions.filter(t => t.pairChecked && t.pairChecked !== SCAN_VERSION)
   if (fresh.length === 0 && stale.length === 0) return { transferIds: [], checkedIds: [] }
@@ -93,6 +103,28 @@ export function scanForTransfers(transactions) {
   for (const t of [...fresh, ...stale]) {
     if (paired.has(t.id) || t.category !== 'Other' || isSplit(t)) continue
     if (TRANSFER_RE.test(t.description)) transferIds.add(t.id)
+  }
+
+  // Large-credit heuristic. On a credit-card account a positive amount is a
+  // payment, statement credit, or merchant refund. A genuine refund reverses
+  // an earlier charge on the SAME card, so it has an equal-and-opposite match
+  // there; a payment doesn't. This layer may override an auto-assigned
+  // spending category — no real refund of this size lacks its charge — and
+  // runs one-shot, so re-choosing a category afterwards sticks.
+  const ccIds = new Set(accounts.filter(a => a.type === 'credit card').map(a => a.id))
+  if (ccIds.size > 0) {
+    for (const t of [...fresh, ...stale]) {
+      if (paired.has(t.id) || transferIds.has(t.id) || isSplit(t)) continue
+      if (!ccIds.has(t.accountId) || t.amount < CC_PAYMENT_MIN || t.category === 'Transfers') continue
+      const hasChargeMatch = (byAmount.get(Math.abs(t.amount).toFixed(2)) || []).some(
+        c =>
+          c.id !== t.id &&
+          c.accountId === t.accountId &&
+          c.amount < 0 &&
+          Math.abs(new Date(c.date) - new Date(t.date)) <= 90 * DAY,
+      )
+      if (!hasChargeMatch) transferIds.add(t.id)
+    }
   }
 
   return { transferIds: [...transferIds], checkedIds: [...fresh, ...stale].map(t => t.id) }
