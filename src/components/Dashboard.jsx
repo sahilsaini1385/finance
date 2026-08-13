@@ -220,7 +220,7 @@ export default function Dashboard({ onNavigate }) {
           return (
             <div className="hero-stats">
               {cell('Cash', cash, `${bucketCount('cash')}${totals.other !== 0 ? ` · ${fmt(totals.other)} other` : ''}`, openBuckets, cfg('Cash'))}
-              {cell('Investments', taxableInvest, `${bucketCount('investments')}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} unvested excluded` : ''}`, openBuckets, cfg('Investments'))}
+              {cell('Investments', taxableInvest, `${bucketCount('investments')}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} not counted` : ''}`, openBuckets, cfg('Investments'))}
               {totals.retirementInvest !== 0 && cell('Retirement', retireInvest, bucketCount('retirement'), openBuckets, cfg('Retirement'))}
               {totals.homeEquity !== 0 && cell('Home equity', homeEquity, 'included in net worth')}
               {rsu.totalUnvestedValue > 0 && (
