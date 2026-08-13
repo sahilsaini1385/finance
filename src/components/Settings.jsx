@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { useStore, initialState } from '../store.jsx'
 import { wipeAllFiles } from '../lib/files.js'
-import { deriveKeys, SETUP_SQL } from '../lib/familySync.js'
+import { deriveKeys, SETUP_SQL, normalizeSupabaseUrl, probeConnection } from '../lib/familySync.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -16,15 +16,22 @@ function FamilySyncCard() {
 
   const connect = async () => {
     setErr('')
-    const url = form.url.trim().replace(/\/$/, '')
     const anonKey = form.anonKey.trim()
     const passphrase = form.passphrase.trim()
     try {
+      const url = normalizeSupabaseUrl(form.url)
+      if (url === null) throw new Error('That looks like a supabase.com page, not your project\'s API address. In your project go to Settings → API and copy the Project URL (https://…supabase.co) — or paste the dashboard address of the project itself and I\'ll convert it.')
       if (!/^https:\/\//.test(url)) throw new Error('Project URL should start with https://')
       if (!anonKey) throw new Error('Paste the anon public key')
       if (passphrase.length < 12) throw new Error('Use a longer passphrase — 4+ random words. It is the only thing protecting your data.')
       setBusy(true)
+      if (url !== form.url.trim().replace(/\/+$/, '')) toast(`Using the project API address: ${url}`)
       const { keyB64, householdId } = await deriveKeys(passphrase, url)
+      // Check the project is reachable and the table exists BEFORE saving —
+      // a connection that 404s on every sync helps no one.
+      const probe = await probeConnection({ url, anonKey, householdId })
+      if (!probe.ok && probe.reason !== 'table-missing') throw new Error(probe.message)
+      if (!probe.ok) throw new Error('Connected to the project, but the budgie_sync table doesn\'t exist yet. Run the SQL snippet from step 1 in the project\'s SQL Editor, then hit this button again.')
       dispatch({
         type: 'SET_CONNECTION',
         payload: { kind: 'familySync', value: { url, anonKey, keyB64, householdId, connectedAt: new Date().toISOString() } },
@@ -109,6 +116,14 @@ function FamilySyncCard() {
         {syncStatus.lastSync && <> · last synced {new Date(syncStatus.lastSync).toLocaleTimeString()}</>}
       </p>
       {syncStatus.error && <p className="error small">{syncStatus.error}</p>}
+      {syncStatus.error && /table|404/i.test(syncStatus.error) && (
+        <div className="small" style={{ marginTop: 6 }}>
+          <p className="small" style={{ margin: '0 0 4px' }}>
+            Run this once in the Supabase project's <strong>SQL Editor</strong>, then hit <strong>Sync now</strong>:
+          </p>
+          <pre className="mono small" style={{ userSelect: 'all', whiteSpace: 'pre-wrap', background: 'var(--surface-2)', padding: 8, borderRadius: 6, margin: 0 }}>{SETUP_SQL}</pre>
+        </div>
+      )}
       <p className="muted small" style={{ marginBottom: 0 }}>
         To add another device: open Budgie there → Settings → Family sync → enter the same project URL, anon
         key, and family passphrase. Existing data on both devices merges — nothing is overwritten. Uploaded
