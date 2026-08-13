@@ -57,6 +57,8 @@ export function hasOverride(state, month, category) {
 export function monthActivity(state, month) {
   let income = 0
   const spentByCat = {}
+  const grossByCat = {}  // charges only — what actually left the accounts
+  const refundByCat = {} // positive amounts in spending categories
   const needsReview = []
   for (const t of state.transactions) {
     if (!t.date?.startsWith(month)) continue
@@ -69,15 +71,20 @@ export function monthActivity(state, month) {
       // Positive amounts in a spending category are refunds/reimbursements
       // (returns, employer paying back Work expenses) — they net against spend.
       spentByCat[p.category] = (spentByCat[p.category] || 0) + -p.amount
+      if (p.amount < 0) grossByCat[p.category] = (grossByCat[p.category] || 0) + -p.amount
+      else refundByCat[p.category] = (refundByCat[p.category] || 0) + p.amount
       // Only unsplit rows land in the review queue — an "Other" piece inside
       // a split is a deliberate choice, and the queue's quick-categorize
       // would clobber the parent of a split anyway.
       if (p === t && p.amount < 0 && p.category === 'Other') needsReview.push(t)
     }
   }
+  // Clamp at zero: an envelope where refunds beat spending holds $0, not a
+  // negative. The gross/refund split is returned so the UI can SHOW that a
+  // clamp happened — a "—" next to visible transactions reads as a bug.
   for (const c of Object.keys(spentByCat)) if (spentByCat[c] < 0) spentByCat[c] = 0
   needsReview.sort((a, b) => a.amount - b.amount) // largest expense first
-  return { income, spentByCat, needsReview }
+  return { income, spentByCat, grossByCat, refundByCat, needsReview }
 }
 
 function shiftMonthKey(month, delta) {
