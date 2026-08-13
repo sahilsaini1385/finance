@@ -5,11 +5,6 @@
 
 import { migrateAmazonCategory } from './categorize.js'
 import { suggestAccountType } from './simplefin.js'
-import { AMZN_SEED } from './rsu.js'
-
-const looksLikeAmazonHousehold = s =>
-  (s.accounts || []).some(a => /amazon/i.test(a.name || '')) ||
-  (s.paystubs || []).some(p => /amazon/i.test(p.employer || ''))
 
 export function applyDataMigrations(state) {
   let s = state
@@ -33,17 +28,6 @@ export function applyDataMigrations(state) {
       return { ...a, type: to }
     })
     s = { ...s, ...(changed ? { accounts } : {}), migrations: { ...s.migrations, accountTypes1: true } }
-  }
-
-  // Pre-load the household's Amazon vesting schedule (see AMZN_SEED). Only
-  // when the state carries an Amazon marker, and only if no vests were ever
-  // entered — a hand-entered schedule always wins.
-  if (!s.migrations?.amznRsuSeed && looksLikeAmazonHousehold(s)) {
-    const cur = s.rsu || {}
-    const rsu = (cur.vests || []).length > 0
-      ? cur
-      : { ...cur, symbol: cur.symbol || AMZN_SEED.symbol, price: cur.price || AMZN_SEED.price, vests: AMZN_SEED.vests }
-    s = { ...s, rsu, migrations: { ...s.migrations, amznRsuSeed: true } }
   }
 
   return s

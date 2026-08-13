@@ -4,7 +4,7 @@
 
 A free, private, in-browser personal finance tool. Track accounts across **Fidelity, Chase, and Bank of America**, import transactions from their CSV exports, log employer **benefits** and **insurance** policies, and get rules-based guidance on **tax management** and **how much insurance you actually need**.
 
-**Your data never leaves your browser.** Everything is stored in `localStorage` — no server, no signup, no cost.
+**Your data lives in your browser.** Everything is stored in `localStorage` — no server, no signup, no cost. To be precise about the optional integrations: bank sync talks to SimpleFIN (directly when possible, else via a stateless CORS proxy on your own deployment), the AI advisor talks to Anthropic with **your** key (directly, via your deployment's stateless proxy, or via a loopback bridge on your machine), and family sync stores an **end-to-end-encrypted** blob in **your own** Supabase project. No proxy stores anything, and nothing readable ever reaches infrastructure the app's author controls.
 
 ## Features
 
@@ -71,3 +71,9 @@ Import takes about a minute per account per month; duplicate rows are detected a
 ## Disclaimer
 
 The Advisor provides educational, rules-based guidance using announced IRS limits (update `src/lib/advisor.js` annually; verify at [irs.gov](https://www.irs.gov)). It is not tax, legal, or investment advice — confirm decisions with a CPA or fee-only fiduciary advisor.
+
+## Testing
+
+`npm test` runs 25 unit suites (~570 checks) over the pure-function cores in `src/lib` — the facts reconciliation layer, paystub/W-2 parsing, tax tables and IRA phase-outs, retirement Monte Carlo, scenario math, mortgage/prepay amortization, net-worth bucketing, data migrations, RSU schedules, and the end-to-end-encrypted family-sync merge.
+
+Suites driven by real financial documents self-skip unless you place your own fixtures in `tests/fixtures/private/` (git-ignored — see `tests/fixtures/README.md`). Browser-level Playwright suites live in `tests/ui/` and run against a built copy of the app (`tests/ui/README.md`), including a Content-Security-Policy smoke test that proves injected scripts are blocked while the PDF parser still works.

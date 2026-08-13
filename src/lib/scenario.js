@@ -3,7 +3,7 @@
 // state, and the page holds levers in component state only.
 //
 // Scenarios are TIME-BOXED: a scenario is a list of phases, each with its
-// own lever values and a duration in years ("Kathryn off for 2 years, then
+// own lever values and a duration in years ("spouse off for 2 years, then
 // back at 80%"). The last phase runs forever; if every explicit phase is
 // finite, life reverts to today's numbers afterward.
 //

@@ -2,6 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- XSS is the top threat to a localStorage-based app (ARCHITECTURE.md).
+         No inline/injected script may execute; network is limited to https
+         (SimpleFIN, the user's Supabase, Anthropic) plus the loopback advisor
+         bridge. Meta CSP so every host — Vercel, previews, local dev — gets it. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http://127.0.0.1:8765 http://localhost:8765; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />

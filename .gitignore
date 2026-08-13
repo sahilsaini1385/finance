@@ -3,3 +3,5 @@ dist
 .DS_Store
 *.local
 __pycache__/
+tests/fixtures/private/
+tests/ui/*.png

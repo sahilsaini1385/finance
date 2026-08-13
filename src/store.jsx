@@ -408,6 +408,13 @@ export function StoreProvider({ children }) {
     syncEngine.notifyLocalChange()
   }, [state, syncEngine])
 
+  // Everything lives in this browser — ask it not to evict the data under
+  // storage pressure. Best-effort: browsers may prompt, ignore, or grant
+  // silently; any of those is fine.
+  useEffect(() => {
+    navigator.storage?.persist?.().catch(() => {})
+  }, [])
+
   // Cross-tab sync: when another tab persists, rehydrate instead of letting
   // this tab's stale in-memory state overwrite it on its next dispatch.
   useEffect(() => {
