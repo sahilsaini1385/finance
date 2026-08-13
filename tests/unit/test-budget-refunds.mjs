@@ -66,5 +66,62 @@ const base = txs => ({ transactions: txs, accounts: [], budgets: {}, budgetMonth
   ok(close(grossByCat.Groceries, 200), 'gross follows the split parts')
 }
 
+// --- the root cause: card payments masquerading as category refunds ---
+// A $10k credit on the card, auto-categorized Dining, must be reclassified
+// as a Transfer by the large-credit heuristic — while genuine refunds
+// (matching an earlier charge on the same card) stay put.
+{
+  const { scanForTransfers, SCAN_VERSION } = await import('../../src/lib/transfers.js')
+  const cc = [{ id: 'card', type: 'credit card' }]
+  const scan = (txs, accounts = cc) => scanForTransfers(txs, accounts)
+
+  // his case: big lone credit on the card, auto-filed as Dining
+  {
+    const { transferIds } = scan([
+      { id: 'p', accountId: 'card', date: '2026-08-05', description: 'Online payment', amount: 10000, category: 'Dining' },
+      { id: 'd1', accountId: 'card', date: '2026-08-10', description: 'Supreme Dumplings', amount: -70, category: 'Dining' },
+    ])
+    ok(transferIds.includes('p'), 'lone $10k card credit → Transfers, even though auto-categorized Dining')
+    ok(!transferIds.includes('d1'), 'the real dining charge is untouched')
+  }
+
+  // genuine large refund: matches an earlier charge on the same card
+  {
+    const { transferIds } = scan([
+      { id: 'buy', accountId: 'card', date: '2026-07-20', description: 'BEST BUY', amount: -1800, category: 'Shopping' },
+      { id: 'ret', accountId: 'card', date: '2026-08-02', description: 'BEST BUY REFUND', amount: 1800, category: 'Shopping' },
+    ])
+    ok(!transferIds.includes('ret'), 'refund matching a same-card charge stays a refund')
+  }
+
+  // small credits (rewards) are left alone; non-card accounts are left alone
+  {
+    const { transferIds } = scan([
+      { id: 'rw', accountId: 'card', date: '2026-08-06', description: 'REWARDS CREDIT', amount: 45, category: 'Dining' },
+      { id: 'dep', accountId: 'chk', date: '2026-08-06', description: 'Deposit', amount: 10000, category: 'Other' },
+    ], [{ id: 'card', type: 'credit card' }, { id: 'chk', type: 'checking' }])
+    ok(!transferIds.includes('rw'), 'small rewards credit not flipped')
+    ok(!transferIds.includes('dep'), 'large deposit on a checking account not flipped')
+  }
+
+  // stale re-sweep: rows stamped under an older scan version get the new layer
+  {
+    const { transferIds, checkedIds } = scan([
+      { id: 'old', accountId: 'card', date: '2026-08-05', description: 'Online payment', amount: 10000, category: 'Dining', pairChecked: SCAN_VERSION - 1 },
+    ])
+    ok(transferIds.includes('old'), 'previously-scanned payment is caught on the version-bump re-sweep')
+    ok(checkedIds.includes('old'), 'and re-stamped so it never re-runs')
+  }
+
+  // pair matching still wins when both sides are synced
+  {
+    const { transferIds } = scan([
+      { id: 'out', accountId: 'chk', date: '2026-08-04', description: 'Payment to card', amount: -10000, category: 'Other' },
+      { id: 'in', accountId: 'card', date: '2026-08-05', description: 'Payment received', amount: 10000, category: 'Other' },
+    ], [{ id: 'card', type: 'credit card' }, { id: 'chk', type: 'checking' }])
+    ok(transferIds.includes('out') && transferIds.includes('in'), 'both sides of a synced payment pair flagged')
+  }
+}
+
 console.log(`\ntest-budget-refunds: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
