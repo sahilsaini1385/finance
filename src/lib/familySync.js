@@ -23,7 +23,17 @@
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 
-const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)))
+// Chunked: spreading a large Uint8Array into fromCharCode passes one argument
+// per byte and overflows the call stack on real-sized states (a household
+// with years of transactions encrypts to hundreds of KB).
+const b64 = buf => {
+  const bytes = new Uint8Array(buf)
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(s)
+}
 const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0))
 
 const subtle = () => globalThis.crypto.subtle
