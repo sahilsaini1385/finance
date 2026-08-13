@@ -56,7 +56,7 @@ export default function Accounts() {
   // Type audit — accounts typed as cash whose names say "investment". Mistyped
   // accounts inflate Cash and understate Investments on the Overview.
   const suggestions = state.accounts
-    .filter(a => !a.typeSuggestionDismissed)
+    .filter(a => !a.typeSuggestionDismissed && !a.bucket) // a pinned bucket is an explicit placement — don't second-guess it
     .map(a => ({ account: a, to: suggestAccountType(a) }))
     .filter(s => s.to)
   const applySuggestion = s => {
@@ -187,6 +187,7 @@ export default function Accounts() {
                   <td>
                     {a.name}
                     {a.excludeFromNetWorth && <span className="badge" style={{ marginLeft: 6 }} title="Tracked here, but not counted in your net worth">not in net worth</span>}
+                    {!a.excludeFromNetWorth && a.bucket && <span className="badge" style={{ marginLeft: 6 }} title="Pinned to this net-worth bucket from the Overview — the account type no longer decides">counts as {a.bucket}</span>}
                   </td>
                   <td>{a.type}</td>
                   <td className="num">{fmtCents(a.balance)}</td>

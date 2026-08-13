@@ -73,6 +73,7 @@ export function buildFinancialContext(state) {
     },
     accounts: (state.accounts || []).map(a => ({
       name: `${a.institution} ${a.name}`, type: a.type, balance: r0(a.balance),
+      ...(a.bucket ? { countsAs: a.bucket } : {}),
       ...(a.excludeFromNetWorth ? { excludedFromNetWorth: true } : {}),
     })),
     budgetThisMonth: {

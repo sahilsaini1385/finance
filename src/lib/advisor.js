@@ -41,30 +41,38 @@ const num = v => {
 // from the Home tab. A linked mortgage account already counts in debt; only
 // when there is none does the Home tab's mortgage balance stand in, so the
 // house is never double-counted.
+// Which hero bucket an account lands in. The user can pin any non-debt
+// account to a bucket (a.bucket, set from the Overview tiles); otherwise the
+// account type decides. Debt is never overridable — money owed is owed.
+export function accountBucket(a) {
+  if (['credit card', 'loan', 'mortgage'].includes(a.type)) return 'debt'
+  if (['cash', 'investments', 'retirement'].includes(a.bucket)) return a.bucket
+  if (['checking', 'savings'].includes(a.type)) return 'cash'
+  if (a.type === 'retirement') return 'retirement'
+  if (['brokerage', 'hsa', '529'].includes(a.type)) return 'investments'
+  return 'other'
+}
+
 export function computeTotals(state) {
-  const cashTypes = ['checking', 'savings']
-  const investTypes = ['brokerage', 'retirement', 'hsa', '529']
-  const debtTypes = ['credit card', 'loan', 'mortgage']
-  let cash = 0, investments = 0, debt = 0, other = 0, excluded = 0
+  let cash = 0, taxableInvest = 0, retirementInvest = 0, debt = 0, other = 0, excluded = 0
   let hasMortgageAccount = false
   for (const a of state.accounts) {
     const b = num(a.balance)
+    const bucket = accountBucket(a)
     if (a.excludeFromNetWorth) {
-      excluded += debtTypes.includes(a.type) ? -Math.abs(b) : b
+      excluded += bucket === 'debt' ? -Math.abs(b) : b
       continue
     }
     if (a.type === 'mortgage') hasMortgageAccount = true
-    if (cashTypes.includes(a.type)) cash += b
-    else if (investTypes.includes(a.type)) investments += b
-    else if (debtTypes.includes(a.type)) debt += Math.abs(b)
+    if (bucket === 'cash') cash += b
+    else if (bucket === 'retirement') retirementInvest += b
+    else if (bucket === 'investments') taxableInvest += b
+    else if (bucket === 'debt') debt += Math.abs(b)
     else other += b
   }
-  // Split for display: retirement accounts (401k/IRA/Roth — type 'retirement')
-  // vs taxable investing. totals.investments stays the combined figure every
-  // projection consumes.
-  const retirementInvest = state.accounts
-    .filter(a => a.type === 'retirement' && !a.excludeFromNetWorth)
-    .reduce((s, a) => s + num(a.balance), 0)
+  // totals.investments stays the combined (taxable + retirement) figure every
+  // projection consumes; the split is what the hero tiles display.
+  const investments = taxableInvest + retirementInvest
   const home = state.home || {}
   const homeValue = num(home.currentValue)
   const homeEquity = homeValue > 0 ? homeValue - (hasMortgageAccount ? 0 : num(home.mortgageBalance)) : 0
@@ -72,7 +80,7 @@ export function computeTotals(state) {
   return {
     cash, investments, debt, other, excluded,
     retirementInvest,
-    taxableInvest: investments - retirementInvest,
+    taxableInvest,
     homeValue, homeEquity,
     accountsNet, // the old accounts-only figure
     netWorth: accountsNet + homeEquity,
