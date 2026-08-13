@@ -9,7 +9,7 @@ A free, private, in-browser personal finance tool. Track accounts across **Fidel
 ## Features
 
 - **Automatic bank sync (optional)** — connect Fidelity, Chase, and Bank of America through [SimpleFIN Bridge](https://beta-bridge.simplefin.org/) (~$1.50/mo): paste a setup token once, then one click pulls balances and transactions. Bank credentials stay with the bridge, never in this app. A free one-file Cloudflare Worker proxy (`proxy/cloudflare-worker.js`) handles CORS. See `ARCHITECTURE.md` for the full design and the multi-user scaling path.
-- **Dashboard** — net worth, cash, investments, debt; 6-month cash-flow chart; spending by category; alerts.
+- **Dashboard** — comprehensive net worth (cash / investments / retirement / home equity / debt, with unvested RSUs shown outside it); tap any bucket tile to assign each account to Cash, Investments, or Retirement — or omit it from net worth entirely; 6-month cash-flow chart; spending by category; alerts.
 - **Accounts** — checking, savings, credit cards, brokerage, retirement, HSA, 529, loans, mortgages, grouped by institution.
 - **Transaction import** — drop in CSV activity files; the format is auto-detected for:
   - Chase credit cards and Chase checking
