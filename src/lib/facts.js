@@ -21,6 +21,7 @@ import {
   baseSalaryRunRate, K401_ROTH_RE,
 } from './income.js'
 import { estimateFederalTax } from './taxTables.js'
+import { rsuScheduledAfter } from './rsu.js'
 
 const num = v => {
   const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
@@ -104,11 +105,15 @@ function resolve(state) {
   let grossIncome = null
   if (payroll && payroll.ytd.gross > 0) {
     const cashRun = Math.max(0, annualizeYtd(payroll.ytd.gross - rsuYtd, payroll.latest.payDate))
-    const total = r0(cashRun + rsuYtd)
+    // Vests scheduled strictly after the latest stub, this year: income the
+    // paycheck can't see yet. Strictly-after so a vest already inside the YTD
+    // never counts twice.
+    const rsuScheduled = r0(rsuScheduledAfter(state, payroll.latest.payDate, year))
+    const total = r0(cashRun + rsuYtd + rsuScheduled)
     grossIncome = fact('grossIncome', total,
-      { origin: 'payroll', label: 'Payroll-verified, annualized', detail: `cash pace ${fmtUsd(r0(cashRun))}/yr + ${fmtUsd(r0(rsuYtd))} RSU vested YTD`, asOf: payroll.latest.payDate },
+      { origin: 'payroll', label: 'Payroll-verified, annualized', detail: `cash pace ${fmtUsd(r0(cashRun))}/yr + ${fmtUsd(r0(rsuYtd))} RSU vested YTD${rsuScheduled > 0 ? ` + ${fmtUsd(rsuScheduled)} still scheduled to vest` : ''}`, asOf: payroll.latest.payDate },
       { estimated: true, year: Number(year), candidates: [
-        { origin: 'payroll', value: total, note: 'cash run-rate + RSU actuals' },
+        { origin: 'payroll', value: total, note: rsuScheduled > 0 ? 'cash run-rate + RSU actuals + scheduled vests' : 'cash run-rate + RSU actuals' },
         ...(typedIncome > 0 ? [{ origin: 'typed', value: typedIncome, note: 'profile gross income' }] : []),
       ] })
     if (typedIncome > 0 && !withinTolerance('grossIncome', total, typedIncome)) {

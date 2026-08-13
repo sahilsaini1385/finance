@@ -56,6 +56,11 @@ export const initialState = {
     retiredReturn: '',
     volatility: '',
   },
+  rsu: {             // unvested equity — future income, never an asset
+    symbol: '',      // ticker, cosmetic ("AMZN")
+    price: '',       // assumed $/share for vests without an explicit amount
+    vests: [],       // {id, date: 'YYYY-MM-DD', units, amount} — amount optional
+  },
   profile: {
     age: '',
     filingStatus: 'single',   // single | mfj | hoh
@@ -85,6 +90,7 @@ function reducer(state, action) {
         home: { ...initialState.home, ...(action.payload.home || {}) },
         budgetConfig: { ...initialState.budgetConfig, ...(action.payload.budgetConfig || {}) },
         retirement: { ...initialState.retirement, ...(action.payload.retirement || {}) },
+        rsu: { ...initialState.rsu, ...(action.payload.rsu || {}) },
       }
     case 'ADD_ACCOUNT':
       return { ...state, accounts: [...state.accounts, action.payload] }
@@ -309,6 +315,28 @@ function reducer(state, action) {
       return { ...state, profile: { ...state.profile, ...action.payload } }
     case 'SET_RETIREMENT':
       return { ...state, retirement: { ...(state.retirement || initialState.retirement), ...action.payload } }
+    case 'SET_RSU':
+      return { ...state, rsu: { ...(state.rsu || initialState.rsu), ...action.payload } }
+    case 'ADD_RSU_VESTS': {
+      const cur = state.rsu || initialState.rsu
+      const existing = cur.vests || []
+      // Re-pasting the same schedule must not duplicate rows.
+      const seen = new Set(existing.map(v => `${v.date}|${v.units}`))
+      const additions = []
+      for (const v of action.payload) {
+        const key = `${v.date}|${v.units}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        additions.push(v)
+      }
+      if (!additions.length) return state
+      const vests = [...existing, ...additions].sort((a, b) => (a.date < b.date ? -1 : 1))
+      return { ...state, rsu: { ...cur, vests } }
+    }
+    case 'DELETE_RSU_VEST': {
+      const cur = state.rsu || initialState.rsu
+      return { ...state, rsu: { ...cur, vests: (cur.vests || []).filter(v => v.id !== action.payload) } }
+    }
     case 'RESET':
       return initialState
     default:
@@ -333,6 +361,7 @@ export function StoreProvider({ children }) {
           home: { ...init.home, ...(parsed.home || {}) },
           budgetConfig: { ...init.budgetConfig, ...(parsed.budgetConfig || {}) },
           retirement: { ...init.retirement, ...(parsed.retirement || {}) },
+          rsu: { ...init.rsu, ...(parsed.rsu || {}) },
         }
         // One-time data migrations, flagged so they never re-run.
         if (!merged.migrations?.amazonCategory) {
