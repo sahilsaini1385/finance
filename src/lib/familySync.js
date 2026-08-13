@@ -64,6 +64,7 @@ export async function decryptState(payloadB64, keyB64) {
 // ---------- Supabase REST (plain fetch, no SDK) ----------
 const TABLE = 'budgie_sync'
 
+// Safe to run any number of times — every statement is idempotent.
 export const SETUP_SQL = `create table if not exists ${TABLE} (
   household text primary key,
   version bigint not null,
@@ -71,6 +72,7 @@ export const SETUP_SQL = `create table if not exists ${TABLE} (
   updated_at timestamptz default now()
 );
 alter table ${TABLE} enable row level security;
+drop policy if exists "budgie anon rw" on ${TABLE};
 create policy "budgie anon rw" on ${TABLE}
   for all to anon using (true) with check (true);`
 
