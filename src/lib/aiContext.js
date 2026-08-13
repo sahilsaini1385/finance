@@ -21,6 +21,7 @@ import { prepayVsInvestSummary } from './prepay.js'
 import { goalPace } from './goals.js'
 import { policyCoverage, enrollmentEvidence } from './facts.js'
 import { projectFI } from './projection.js'
+import { rsuSummary } from './rsu.js'
 
 const r0 = n => Math.round(Number(n) || 0)
 
@@ -63,6 +64,8 @@ export function buildFinancialContext(state) {
       total: r0(totals.netWorth),
       cash: r0(totals.cash),
       investments: r0(totals.investments),
+      investmentsTaxable: r0(totals.taxableInvest),
+      investmentsRetirement: r0(totals.retirementInvest),
       homeEquity: r0(totals.homeEquity),
       debt: r0(totals.debt),
       ...(totals.excluded !== 0 ? { excludedUnvested: r0(totals.excluded) } : {}),
@@ -104,6 +107,20 @@ export function buildFinancialContext(state) {
           hsa: r0(s.ytd.hsa), rsuVested: r0(s.ytd.rsuVested),
           pretaxBenefits: r0(s.ytd.pretaxBenefits),
         },
+      }
+    })(),
+    rsu: (() => {
+      const s = rsuSummary(state)
+      if (!s.totalUnvestedValue) return undefined
+      return {
+        note: 'Unvested RSUs — future income, deliberately EXCLUDED from net worth. Vests remaining this year are already inside the reconciled gross-income estimate.',
+        ...(state.rsu?.symbol ? { symbol: state.rsu.symbol } : {}),
+        assumedPricePerShare: Number(state.rsu?.price) || null,
+        totalUnvestedValue: r0(s.totalUnvestedValue),
+        totalUnvestedUnits: Math.round(s.totalUnvestedUnits),
+        remainingThisYearValue: r0(s.remainingThisYear),
+        nextVest: s.nextVest ? { date: s.nextVest.date, value: r0(s.nextVest.value) } : null,
+        byYear: s.byYear.map(y => ({ year: y.year, value: r0(y.value) })),
       }
     })(),
     insurance: (state.insurance || []).map(p => {

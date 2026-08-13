@@ -116,12 +116,29 @@ export function guessAccountType(sfAccount) {
   if (/401|403|ira|roth|retirement|pension/.test(n)) return 'retirement'
   if (/hsa/.test(n)) return 'hsa'
   if (/529/.test(n)) return '529'
-  if (/brokerage|invest|trading/.test(n)) return 'brokerage'
+  // Cash names win before the broader investment patterns ("Joint Checking").
+  if (/check/.test(n)) return 'checking'
+  if (/saving|money market|mma/.test(n)) return 'savings'
+  if (/brokerage|invest|trading|individual|joint|wros|stock plan|mutual fund|etf|utma|wealth/.test(n)) return 'brokerage'
   if (/mortgage/.test(n)) return 'mortgage'
   if (/loan/.test(n)) return 'loan'
-  if (/saving|money market|mma/.test(n)) return 'savings'
   if (!Number.isNaN(bal) && bal < 0) return 'credit card'
   return 'checking'
+}
+
+// Names that scream "investment" on an account typed as cash — the audit the
+// Accounts page offers one-click reclassification for.
+export function suggestAccountType(account) {
+  if (!['checking', 'savings', 'other'].includes(account.type)) return null
+  const n = (account.name || '').toLowerCase()
+  // Specific tax-advantaged names win even over cash words ("401(k) Savings
+  // Plan", "Health Savings Account", "529 College Savings").
+  if (/401|403|ira\b|roth|retirement|pension/.test(n)) return 'retirement'
+  if (/hsa|health savings/.test(n)) return 'hsa'
+  if (/529/.test(n)) return '529'
+  if (/check|saving|money market|mma|bill pay|spend/.test(n)) return null
+  if (/brokerage|invest|trading|individual|joint|wros|stock plan|mutual fund|etf|utma|wealth|equity award/.test(n)) return 'brokerage'
+  return null
 }
 
 export function epochToISODate(epochSeconds) {

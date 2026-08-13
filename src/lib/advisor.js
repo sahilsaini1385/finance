@@ -59,12 +59,20 @@ export function computeTotals(state) {
     else if (debtTypes.includes(a.type)) debt += Math.abs(b)
     else other += b
   }
+  // Split for display: retirement accounts (401k/IRA/Roth — type 'retirement')
+  // vs taxable investing. totals.investments stays the combined figure every
+  // projection consumes.
+  const retirementInvest = state.accounts
+    .filter(a => a.type === 'retirement' && !a.excludeFromNetWorth)
+    .reduce((s, a) => s + num(a.balance), 0)
   const home = state.home || {}
   const homeValue = num(home.currentValue)
   const homeEquity = homeValue > 0 ? homeValue - (hasMortgageAccount ? 0 : num(home.mortgageBalance)) : 0
   const accountsNet = cash + investments + other - debt
   return {
     cash, investments, debt, other, excluded,
+    retirementInvest,
+    taxableInvest: investments - retirementInvest,
     homeValue, homeEquity,
     accountsNet, // the old accounts-only figure
     netWorth: accountsNet + homeEquity,

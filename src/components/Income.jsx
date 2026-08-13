@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { parsePaystub, paystubYearSummary, K401_TRAD_RE, K401_AFTER_RE, K401_ROTH_RE } from '../lib/income.js'
+import { parseVestSchedule, rsuSummary, vestValue } from '../lib/rsu.js'
 import { resolveFacts, getDataConflicts } from '../lib/facts.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
 import { LIMITS_2026 } from '../lib/advisor.js'
@@ -9,6 +10,167 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
 const thisYear = String(new Date().getFullYear())
+
+// Unvested equity — future income, deliberately outside net worth. The
+// schedule feeds the reconciled gross-income estimate so taxes and the
+// advisor see true expected income, not just what has already vested.
+function RsuCard({ state, dispatch, toast }) {
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [manual, setManual] = useState({ date: '', units: '', amount: '' })
+  const [armedVest, setArmedVest] = useState(null)
+
+  const rsu = state.rsu || { symbol: '', price: '', vests: [] }
+  const vests = rsu.vests || []
+  const summary = rsuSummary(state)
+  const today = new Date().toISOString().slice(0, 10)
+
+  const importPaste = () => {
+    const parsed = parseVestSchedule(pasteText)
+    if (!parsed.length) {
+      toast('No vest rows found — expected lines like “Aug-15-2026 $30,469.92 USD 114 units”.', { kind: 'error' })
+      return
+    }
+    dispatch({ type: 'ADD_RSU_VESTS', payload: parsed.map(v => ({ ...v, id: uid() })) })
+    toast(`Imported ${parsed.length} vest${parsed.length === 1 ? '' : 's'} (duplicates skipped)`, { kind: 'good' })
+    setPasteText('')
+    setPasteOpen(false)
+  }
+
+  const addManual = () => {
+    const units = parseFloat(manual.units) || 0
+    const amount = parseFloat(manual.amount) || 0
+    if (!manual.date || (units <= 0 && amount <= 0)) {
+      toast('A vest needs a date plus units or a dollar amount.', { kind: 'error' })
+      return
+    }
+    dispatch({ type: 'ADD_RSU_VESTS', payload: [{ id: uid(), date: manual.date, units, amount }] })
+    setManual({ date: '', units: '', amount: '' })
+  }
+
+  const removeVest = v => {
+    if (armedVest !== v.id) {
+      setArmedVest(v.id)
+      setTimeout(() => setArmedVest(cur => (cur === v.id ? null : cur)), 3000)
+      return
+    }
+    dispatch({ type: 'DELETE_RSU_VEST', payload: v.id })
+    setArmedVest(null)
+  }
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="trending-up" /></span> RSU vesting schedule</h2>
+      <p className="muted small">
+        Unvested shares are future income, not an asset — they show on the Overview but never count toward
+        net worth. Vests still ahead this year do feed your income estimate, so tax math sees your true gross.
+      </p>
+
+      <div className="grid-2-forms" style={{ marginBottom: 10 }}>
+        <label className="field">
+          <span>Ticker (optional)</span>
+          <input value={rsu.symbol || ''} placeholder="AMZN" onChange={e => dispatch({ type: 'SET_RSU', payload: { symbol: e.target.value.toUpperCase() } })} />
+        </label>
+        <label className="field">
+          <span>Assumed price per share ($)</span>
+          <input type="number" inputMode="decimal" value={rsu.price || ''} placeholder="267"
+            onChange={e => dispatch({ type: 'SET_RSU', payload: { price: e.target.value } })} />
+        </label>
+      </div>
+      <p className="small muted" style={{ marginTop: -4 }}>
+        Used only for vests without their own dollar amount. Grant-portal estimates already baked into the
+        pasted schedule win over this price.
+      </p>
+
+      {vests.length > 0 && (
+        <div className="stat-row cols-4" style={{ marginBottom: 10 }}>
+          <div className="stat-tile" style={{ cursor: 'default' }}>
+            <div className="stat-label">Unvested value</div>
+            <div className="stat-value money">~{fmt(summary.totalUnvestedValue)}</div>
+            <div className="stat-sub">{Math.round(summary.totalUnvestedUnits).toLocaleString()} units · not in net worth</div>
+          </div>
+          <div className="stat-tile" style={{ cursor: 'default' }}>
+            <div className="stat-label">Still vesting {thisYear}</div>
+            <div className="stat-value money">{fmt(summary.remainingThisYear)}</div>
+            <div className="stat-sub">counts toward this year’s income</div>
+          </div>
+          <div className="stat-tile" style={{ cursor: 'default' }}>
+            <div className="stat-label">Next vest</div>
+            <div className="stat-value money">{summary.nextVest ? fmt(summary.nextVest.value) : '—'}</div>
+            <div className="stat-sub">{summary.nextVest ? summary.nextVest.date : 'all vested'}</div>
+          </div>
+          <div className="stat-tile" style={{ cursor: 'default' }}>
+            <div className="stat-label">Schedule runs through</div>
+            <div className="stat-value">{summary.lastVestYear || '—'}</div>
+            <div className="stat-sub">{vests.length} vest dates</div>
+          </div>
+        </div>
+      )}
+
+      <div className="row-actions" style={{ marginBottom: 10 }}>
+        <button className="btn small" onClick={() => setPasteOpen(o => !o)}>
+          {pasteOpen ? 'Cancel paste' : 'Paste schedule'}
+        </button>
+      </div>
+      {pasteOpen && (
+        <div style={{ marginBottom: 10 }}>
+          <textarea
+            rows={6}
+            style={{ width: '100%' }}
+            placeholder={'One vest per line, straight from your equity portal:\nAug-15-2026  $30,469.92 USD  114 units\nNov-21-2026  $32,608.16 USD  122 units'}
+            value={pasteText}
+            onChange={e => setPasteText(e.target.value)}
+          />
+          <div className="row-actions" style={{ marginTop: 6 }}>
+            <button className="btn primary small" onClick={importPaste}>Import vests</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid-2-forms" style={{ marginBottom: 10, alignItems: 'end' }}>
+        <label className="field">
+          <span>Vest date</span>
+          <input type="date" value={manual.date} onChange={e => setManual(m => ({ ...m, date: e.target.value }))} />
+        </label>
+        <label className="field">
+          <span>Units</span>
+          <input type="number" inputMode="numeric" value={manual.units} onChange={e => setManual(m => ({ ...m, units: e.target.value }))} />
+        </label>
+        <label className="field">
+          <span>Value $ (optional)</span>
+          <input type="number" inputMode="decimal" value={manual.amount} onChange={e => setManual(m => ({ ...m, amount: e.target.value }))} />
+        </label>
+        <button className="btn small" onClick={addManual} style={{ marginBottom: 2 }}>Add vest</button>
+      </div>
+
+      {vests.length > 0 && (
+        <table className="table">
+          <thead>
+            <tr><th>Vest date</th><th className="num">Units</th><th className="num">Est. value</th><th></th><th></th></tr>
+          </thead>
+          <tbody>
+            {vests.map(v => (
+              <tr key={v.id} style={v.date <= today ? { opacity: 0.55 } : undefined}>
+                <td>{v.date}</td>
+                <td className="num">{v.units ? Math.round(v.units).toLocaleString() : '—'}</td>
+                <td className="num">{fmt(vestValue(v, rsu.price))}</td>
+                <td className="small">{v.date <= today ? <span className="badge" style={{ color: 'var(--text-2)', background: 'var(--surface-2)' }}>vested</span> : <span className="badge">upcoming</span>}</td>
+                <td className="row-actions">
+                  <button className={armedVest === v.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => removeVest(v)}>
+                    {armedVest === v.id ? 'Confirm?' : 'Delete'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="trust-note">
+        <Icon name="lock" size={12} /> Stays in this browser (and your encrypted family sync, if on).
+      </div>
+    </div>
+  )
+}
 
 export default function Income() {
   const { state, dispatch } = useStore()
@@ -136,8 +298,8 @@ export default function Income() {
             if (gi?.source?.origin === 'payroll') {
               lines.push(
                 <p key="ann" className="small muted money" style={{ marginBottom: 0 }}>
-                  Annualized income: <strong>~{fmt(gi.value)}/yr</strong> ({gi.source.detail}) — RSU vests count as
-                  actuals, never extrapolated.
+                  Annualized income: <strong>~{fmt(gi.value)}/yr</strong> ({gi.source.detail}) — RSU income comes
+                  from actual vests plus your entered schedule, never extrapolated.
                 </p>,
               )
             }
@@ -148,6 +310,8 @@ export default function Income() {
           })()}
         </div>
       )}
+
+      <RsuCard state={state} dispatch={dispatch} toast={toast} />
 
       {stubs.length === 0 ? (
         <div className="card">

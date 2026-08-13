@@ -4,6 +4,7 @@ import { computeTotals, getRecommendations } from '../lib/advisor.js'
 import { monthActivity } from '../lib/budget.js'
 import { localMonth } from '../lib/dates.js'
 import { detectRecurring, upcomingBills } from '../lib/savings.js'
+import { rsuSummary } from '../lib/rsu.js'
 import { txParts } from '../lib/tx.js'
 import ConflictBanner from './ConflictBanner.jsx'
 import Icon from './Icon.jsx'
@@ -122,9 +123,11 @@ export default function Dashboard({ onNavigate }) {
 
   const heroValue = useCountUp(totals.netWorth)
   const cash = useCountUp(totals.cash)
-  const invest = useCountUp(totals.investments)
+  const taxableInvest = useCountUp(totals.taxableInvest)
+  const retireInvest = useCountUp(totals.retirementInvest)
   const debt = useCountUp(totals.debt)
   const homeEquity = useCountUp(totals.homeEquity)
+  const rsu = useMemo(() => rsuSummary(state), [state.rsu])
 
   // Chart points: daily snapshots, downsampled to one per ISO week past 240
   // points so years of history stay a light SVG path. First and last raw
@@ -210,8 +213,18 @@ export default function Dashboard({ onNavigate }) {
           return (
             <div className="hero-stats">
               {cell('Cash', cash, `${accountCount(['checking', 'savings'])}${totals.other !== 0 ? ` · ${fmt(totals.other)} other` : ''}`)}
-              {cell('Investments', invest, `${accountCount(['brokerage', 'retirement', 'hsa', '529'])}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} unvested excluded` : ''}`)}
+              {cell('Investments', taxableInvest, `${accountCount(['brokerage', 'hsa', '529'])}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} unvested excluded` : ''}`)}
+              {totals.retirementInvest !== 0 && cell('Retirement', retireInvest, accountCount(['retirement']))}
               {totals.homeEquity !== 0 && cell('Home equity', homeEquity, 'included in net worth')}
+              {rsu.totalUnvestedValue > 0 && (
+                <div className="hs-cell" role="button" tabIndex={0} aria-label="Unvested RSUs — open Income"
+                  onClick={() => onNavigate('income')}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('income') } }}>
+                  <div className="stat-label">Unvested RSUs</div>
+                  <div className="stat-value sm money">~{fmt(Math.round(rsu.totalUnvestedValue))}</div>
+                  <div className="stat-sub">not in net worth · vest through {rsu.lastVestYear}</div>
+                </div>
+              )}
               {cell('Debt', debt, accountCount(['credit card', 'loan', 'mortgage']))}
             </div>
           )

@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt, fmtCents } from '../store.jsx'
+import { suggestAccountType } from '../lib/simplefin.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -52,6 +53,19 @@ export default function Accounts() {
     toast('Account deleted')
   }
 
+  // Type audit — accounts typed as cash whose names say "investment". Mistyped
+  // accounts inflate Cash and understate Investments on the Overview.
+  const suggestions = state.accounts
+    .filter(a => !a.typeSuggestionDismissed)
+    .map(a => ({ account: a, to: suggestAccountType(a) }))
+    .filter(s => s.to)
+  const applySuggestion = s => {
+    dispatch({ type: 'UPDATE_ACCOUNT', payload: { id: s.account.id, type: s.to } })
+    toast(`${s.account.name} → ${s.to}`, { kind: 'good' })
+  }
+  const dismissSuggestion = s =>
+    dispatch({ type: 'UPDATE_ACCOUNT', payload: { id: s.account.id, typeSuggestionDismissed: true } })
+
   const totalAssets = state.accounts.filter(a => !DEBT_TYPES.includes(a.type)).reduce((s, a) => s + (parseFloat(a.balance) || 0), 0)
   const totalDebt = state.accounts.filter(a => DEBT_TYPES.includes(a.type)).reduce((s, a) => s + Math.abs(parseFloat(a.balance) || 0), 0)
   const byInstitution = INSTITUTIONS.map(inst => [inst, state.accounts.filter(a => a.institution === inst)])
@@ -79,6 +93,36 @@ export default function Accounts() {
           <Icon name="plus" size={14} /> Add account
         </button>
       </div>
+
+      {suggestions.length > 0 && (
+        <div className="card">
+          <h2><span className="icon-chip"><Icon name="lightbulb" /></span> These look like investment accounts</h2>
+          <p className="muted small">
+            They're typed as cash right now, which inflates the Cash number on your Overview. One click
+            moves each to where it belongs — retirement (401(k)/IRA/Roth) stays separate from taxable investments.
+          </p>
+          <table className="table">
+            <tbody>
+              {suggestions.map(s => (
+                <tr key={s.account.id}>
+                  <td>{s.account.institution} · {s.account.name}</td>
+                  <td className="small muted">{s.account.type} → <strong>{s.to}</strong></td>
+                  <td className="num">{fmt(parseFloat(s.account.balance) || 0)}</td>
+                  <td className="row-actions">
+                    <button className="btn primary small" onClick={() => applySuggestion(s)}>Change to {s.to}</button>
+                    <button className="btn ghost small" onClick={() => dismissSuggestion(s)} title="It really is a cash account — don't ask again">Keep as is</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {suggestions.length > 1 && (
+            <div className="row-actions" style={{ marginTop: 8 }}>
+              <button className="btn small" onClick={() => suggestions.forEach(applySuggestion)}>Apply all {suggestions.length}</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {(showForm || editingId) && (
         <form className="card form-grid form-in" onSubmit={submit}>
