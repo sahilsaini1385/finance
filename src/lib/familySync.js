@@ -82,6 +82,22 @@ function sbHeaders(cfg) {
   }
 }
 
+// Deployment-baked Supabase config: set VITE_SUPABASE_URL and
+// VITE_SUPABASE_ANON_KEY in the hosting project's environment variables and
+// every device only needs the family passphrase to join. The anon key is
+// public by design (it ships to every browser regardless); the passphrase
+// remains the only secret and never leaves the device.
+export function bakedConfig() {
+  try {
+    const env = import.meta.env || {}
+    const url = env.VITE_SUPABASE_URL
+    const anonKey = env.VITE_SUPABASE_ANON_KEY
+    return url && anonKey ? { url: String(url).trim().replace(/\/+$/, ''), anonKey: String(anonKey).trim() } : null
+  } catch {
+    return null
+  }
+}
+
 // Normalize whatever the user pastes into the project API base URL.
 // People copy the dashboard address (supabase.com/dashboard/project/<ref>/…)
 // at least as often as the API one — derive the right URL from it.
