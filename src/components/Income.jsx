@@ -19,6 +19,7 @@ function RsuCard({ state, dispatch, toast }) {
   const [pasteText, setPasteText] = useState('')
   const [manual, setManual] = useState({ date: '', units: '', amount: '' })
   const [armedVest, setArmedVest] = useState(null)
+  const [readingFile, setReadingFile] = useState(false)
 
   const rsu = state.rsu || { symbol: '', price: '', vests: [] }
   const vests = rsu.vests || []
@@ -35,6 +36,25 @@ function RsuCard({ state, dispatch, toast }) {
     toast(`Imported ${parsed.length} vest${parsed.length === 1 ? '' : 's'} (duplicates skipped)`, { kind: 'good' })
     setPasteText('')
     setPasteOpen(false)
+  }
+
+  const uploadSchedule = async file => {
+    if (!file) return
+    setReadingFile(true)
+    try {
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+      const text = isPdf ? await extractPdfTextLayout(file) : await file.text()
+      const parsed = parseVestSchedule(text)
+      if (!parsed.length) {
+        toast('No vest rows found in that file — expected dates alongside units or dollar amounts.', { kind: 'error' })
+      } else {
+        dispatch({ type: 'ADD_RSU_VESTS', payload: parsed.map(v => ({ ...v, id: uid() })) })
+        toast(`Imported ${parsed.length} vest${parsed.length === 1 ? '' : 's'} from the file (duplicates skipped)`, { kind: 'good' })
+      }
+    } catch (e) {
+      toast(`Couldn’t read that file: ${e.message}`, { kind: 'error' })
+    }
+    setReadingFile(false)
   }
 
   const addManual = () => {
@@ -123,6 +143,14 @@ function RsuCard({ state, dispatch, toast }) {
           />
           <div className="row-actions" style={{ marginTop: 6 }}>
             <button className="btn primary small" onClick={importPaste}>Import vests</button>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <FileDrop
+              onFile={uploadSchedule}
+              accept=".pdf,.txt,.csv"
+              title={readingFile ? 'Reading…' : '…or drop the schedule as a PDF'}
+              subtitle="Exports from equity portals parse automatically — read locally, the file isn't kept"
+            />
           </div>
         </div>
       )}

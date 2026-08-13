@@ -4,6 +4,37 @@
 // gross-income estimate (facts.js), so taxes and the advisor see true
 // expected income instead of only what has already vested.
 
+// The household's real Amazon vesting schedule (18 scheduled distributions,
+// pasted from the equity portal on 2026-08-13, ≈$267.28/share). Seeded once
+// by a data migration when the state looks like this household (an Amazon
+// account or paystub exists) and no vests have been entered yet — so the
+// schedule is just there, no retyping. Deterministic ids keep family-sync
+// merges duplicate-free if both phones seed independently.
+export const AMZN_SEED = {
+  symbol: 'AMZN',
+  price: '267.28',
+  vests: [
+    { date: '2026-08-15', amount: 30469.92, units: 114 },
+    { date: '2026-08-21', amount: 51050.48, units: 191 },
+    { date: '2026-11-15', amount: 30469.92, units: 114 },
+    { date: '2026-11-21', amount: 51050.48, units: 191 },
+    { date: '2027-02-15', amount: 30202.64, units: 113 },
+    { date: '2027-02-21', amount: 50783.20, units: 190 },
+    { date: '2027-05-15', amount: 40626.56, units: 152 },
+    { date: '2027-05-21', amount: 70561.92, units: 264 },
+    { date: '2027-08-15', amount: 40626.56, units: 152 },
+    { date: '2027-08-21', amount: 70561.92, units: 264 },
+    { date: '2027-11-15', amount: 40626.56, units: 152 },
+    { date: '2027-11-21', amount: 70561.92, units: 264 },
+    { date: '2028-02-15', amount: 40359.28, units: 151 },
+    { date: '2028-02-21', amount: 70294.64, units: 263 },
+    { date: '2028-05-21', amount: 65750.88, units: 246 },
+    { date: '2028-08-21', amount: 65750.88, units: 246 },
+    { date: '2028-11-21', amount: 65483.60, units: 245 },
+    { date: '2029-02-21', amount: 65483.60, units: 245 },
+  ].map(v => ({ ...v, id: `amzn-${v.date}` })),
+}
+
 const num = v => {
   const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
   return Number.isNaN(n) ? 0 : n
