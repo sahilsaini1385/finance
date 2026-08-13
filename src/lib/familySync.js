@@ -74,7 +74,12 @@ export async function decryptState(payloadB64, keyB64) {
 // ---------- Supabase REST (plain fetch, no SDK) ----------
 const TABLE = 'budgie_sync'
 
-// Safe to run any number of times — every statement is idempotent.
+// Safe to run any number of times — every statement is idempotent. Also the
+// UPGRADE script for tables created by older builds: it replaces the original
+// blanket read/write policy with select/insert/update only, so an anon-key
+// holder can never DELETE households. (Rows hold only E2E-encrypted blobs;
+// the anon key was never a confidentiality boundary — this narrows the
+// vandalism surface to overwrite, which versioned pushes detect.)
 export const SETUP_SQL = `create table if not exists ${TABLE} (
   household text primary key,
   version bigint not null,
@@ -83,8 +88,17 @@ export const SETUP_SQL = `create table if not exists ${TABLE} (
 );
 alter table ${TABLE} enable row level security;
 drop policy if exists "budgie anon rw" on ${TABLE};
-create policy "budgie anon rw" on ${TABLE}
-  for all to anon using (true) with check (true);`
+drop policy if exists "budgie anon select" on ${TABLE};
+drop policy if exists "budgie anon insert" on ${TABLE};
+drop policy if exists "budgie anon update" on ${TABLE};
+create policy "budgie anon select" on ${TABLE}
+  for select to anon using (true);
+create policy "budgie anon insert" on ${TABLE}
+  for insert to anon with check (true);
+create policy "budgie anon update" on ${TABLE}
+  for update to anon using (true) with check (true);
+revoke delete on ${TABLE} from anon;
+revoke delete on ${TABLE} from authenticated;`
 
 function sbHeaders(cfg) {
   return {

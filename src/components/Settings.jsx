@@ -79,7 +79,7 @@ function FamilySyncCard() {
             </li>
             <li>
               Invent a <strong>family passphrase</strong> (4+ random words). Every device that enters the same
-              three values joins the same household — that's how Kathryn's phone connects too.
+              three values joins the same household — that's how a partner's phone connects too.
             </li>
           </ol>
         )}
