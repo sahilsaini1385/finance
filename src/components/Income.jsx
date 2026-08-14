@@ -13,6 +13,10 @@ import { useToast } from './Toaster.jsx'
 
 const thisYear = String(new Date().getFullYear())
 
+// "2026-07-31" reads like a database field; "Jul 31" reads like a date.
+const payDateLabel = iso =>
+  iso ? new Date(iso + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
+
 // Optional share-price lookup. Off until switched on, and a fetched price is
 // only ever a suggestion — it lands in rsu.quote, never in the price field the
 // user typed, and never changes a number without being applied.
@@ -502,25 +506,47 @@ export default function Income() {
 
       {summary && (
         <div className="card">
-          <h2>{thisYear} year to date · {summary.employer || 'your employer'}</h2>
+          <h2>{thisYear} income · {summary.employer || 'your employer'}</h2>
+
+          {(() => {
+            const { facts } = resolveFacts(state)
+            const gi = facts.grossIncome
+            if (!gi || gi.source?.origin !== 'payroll') return null
+            const pctOfYear = summary.ytd.gross > 0 ? Math.round((summary.ytd.gross / gi.value) * 100) : 0
+            return (
+              <div className="income-projection">
+                <div className="stat-label">Projected {thisYear} gross income</div>
+                <div className="income-projection-value money">~{fmt(gi.value)}</div>
+                <div className="income-projection-bar" aria-hidden>
+                  <div className="income-projection-fill" style={{ width: `${Math.min(100, pctOfYear)}%` }} />
+                </div>
+                <p className="small muted money" style={{ margin: '6px 0 0' }}>
+                  <strong>{fmt(summary.ytd.gross)} earned so far</strong> ({pctOfYear}% of the projection),
+                  through {payDateLabel(summary.latest.payDate)} · {gi.source.detail}. RSU income comes from
+                  actual vests plus your entered schedule, never extrapolated.
+                </p>
+              </div>
+            )
+          })()}
+
           <div className="stat-row cols-4">
             <div className="stat-tile" style={{ cursor: 'default' }}>
-              <div className="stat-label">Gross pay</div>
+              <div className="stat-label">Gross pay · YTD</div>
               <div className="stat-value money">{fmt(summary.ytd.gross)}</div>
-              <div className="stat-sub">through {summary.latest.payDate}</div>
+              <div className="stat-sub">Jan 1 – {payDateLabel(summary.latest.payDate)}</div>
             </div>
             <div className="stat-tile" style={{ cursor: 'default' }}>
-              <div className="stat-label">Taxes withheld</div>
+              <div className="stat-label">Taxes withheld · YTD</div>
               <div className="stat-value money">{fmt(summary.ytd.allTaxes)}</div>
-              <div className="stat-sub">{summary.ytd.gross > 0 ? `${Math.round((summary.ytd.allTaxes / summary.ytd.gross) * 100)}% of gross` : ''}</div>
+              <div className="stat-sub">{summary.ytd.gross > 0 ? `${Math.round((summary.ytd.allTaxes / summary.ytd.gross) * 100)}% of gross so far` : ''}</div>
             </div>
             <div className="stat-tile" style={{ cursor: 'default' }}>
-              <div className="stat-label">401(k) employee</div>
+              <div className="stat-label">401(k) employee · YTD</div>
               <div className="stat-value money">{fmt(k401Employee)}</div>
               <div className="stat-sub">of {fmt(k401Limit)} limit</div>
             </div>
             <div className="stat-tile" style={{ cursor: 'default' }}>
-              <div className="stat-label">After-tax 401(k)</div>
+              <div className="stat-label">After-tax 401(k) · YTD</div>
               <div className="stat-value money">{fmt(summary.ytd.k401AfterTax)}</div>
               <div className="stat-sub">mega-backdoor lane</div>
             </div>
@@ -537,23 +563,9 @@ export default function Income() {
                   ? `Current pace projects ~${fmt(Math.round(paceInfo.projected))} by year end — ${fmt(Math.round(k401Limit - paceInfo.projected))} of tax-advantaged space would go unused.`
                   : ''}
           </p>
-          {(() => {
-            const { facts } = resolveFacts(state)
-            const gi = facts.grossIncome
-            const lines = []
-            if (gi?.source?.origin === 'payroll') {
-              lines.push(
-                <p key="ann" className="small muted money" style={{ marginBottom: 0 }}>
-                  Annualized income: <strong>~{fmt(gi.value)}/yr</strong> ({gi.source.detail}) — RSU income comes
-                  from actual vests plus your entered schedule, never extrapolated.
-                </p>,
-              )
-            }
-            for (const c of getDataConflicts(state).filter(c => (c.surfaces || []).includes('income'))) {
-              lines.push(<p key={c.message} className="small money" style={{ color: 'var(--warning)', marginBottom: 0 }}>{c.message}</p>)
-            }
-            return lines
-          })()}
+          {getDataConflicts(state).filter(c => (c.surfaces || []).includes('income')).map(c => (
+            <p key={c.message} className="small money" style={{ color: 'var(--warning-text)', marginBottom: 0 }}>{c.message}</p>
+          ))}
         </div>
       )}
 
