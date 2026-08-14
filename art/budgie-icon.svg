@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Budgie icon">
+  <!-- Source of truth for every Budgie icon. Full-bleed (rx="0"); the favicon
+       variant swaps in rx="14" and iOS masks its own corners.
+       Regenerate the PNGs with: node art/render-icons.mjs -->
+  <defs>
+    <linearGradient id="budgieBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#dde8cf"/>
+      <stop offset="1" stop-color="#a9bf98"/>
+    </linearGradient>
+    <!-- A soft light source, so the flecks below have something to catch. -->
+    <radialGradient id="sheen" cx="0.32" cy="0.2" r="0.8">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Glitter: noise thresholded hard so only its brightest peaks survive,
+         at two scales — fine mineral dust plus rarer, larger flecks — then
+         dimmed. Meant to read as shimmer suspended in the paint, not as
+         sparkles on top of it. Frequencies are in viewBox units, so fleck
+         size stays proportional from a 16px favicon to a 512px app icon. -->
+    <filter id="glitter" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="11" result="fine"/>
+      <feColorMatrix in="fine" type="matrix" result="fineSpecks"
+        values="0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0 1
+                15 0 0 0 -11.35"/>
+      <feComponentTransfer in="fineSpecks" result="fineDim">
+        <feFuncA type="linear" slope="0.58"/>
+      </feComponentTransfer>
+      <feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="1" seed="5" result="coarse"/>
+      <feColorMatrix in="coarse" type="matrix" result="coarseSpecks"
+        values="0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0 1
+                20 0 0 0 -16.4"/>
+      <feComponentTransfer in="coarseSpecks" result="coarseDim">
+        <feFuncA type="linear" slope="0.72"/>
+      </feComponentTransfer>
+      <feMerge result="allSpecks">
+        <feMergeNode in="fineDim"/>
+        <feMergeNode in="coarseDim"/>
+      </feMerge>
+      <feComposite in="allSpecks" in2="SourceAlpha" operator="in" result="clipped"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode in="clipped"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="0" fill="url(#budgieBg)" filter="url(#glitter)"/>
+  <rect x="0" y="0" width="64" height="64" rx="0" fill="url(#sheen)"/>
+  <g transform="translate(9 9) scale(1.4375)">
+    <ellipse cx="16" cy="17.5" rx="10" ry="9.5" fill="#b97a48"/>
+    <rect x="2" y="8.5" width="7" height="16" rx="3.5" fill="#8a5a34" transform="rotate(-7 5.5 9)"/>
+    <rect x="23" y="8.5" width="7" height="16" rx="3.5" fill="#8a5a34" transform="rotate(7 26.5 9)"/>
+    <path d="M14.6 8.0 C15.4 7.55 16.6 7.55 17.4 8.0 C18.2 11.4 19.6 14.6 20.6 18.0 C21.9 22.3 19.8 25.8 16 25.8 C12.2 25.8 10.1 22.3 11.4 18.0 C12.4 14.6 13.8 11.4 14.6 8.0 Z" fill="#f9f9f7"/>
+    <circle cx="10.8" cy="15.3" r="1.75" fill="#1b1a17"/>
+    <circle cx="21.2" cy="15.3" r="1.75" fill="#1b1a17"/>
+    <path d="M16 22.6 C14.2 22.6 12.9 21.5 12.9 20.3 C12.9 19.1 14.3 18.4 16 18.4 C17.7 18.4 19.1 19.1 19.1 20.3 C19.1 21.5 17.8 22.6 16 22.6 Z" fill="#1b1a17"/>
+  </g>
+</svg>
