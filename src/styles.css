@@ -442,6 +442,16 @@ code {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  /* On a narrow phone the action drops onto its own row rather than being
+     squeezed until its label breaks across lines. */
+  flex-wrap: wrap;
+}
+.page-head > :first-child {
+  flex: 1 1 240px;
+  min-width: 0; /* long titles shrink instead of forcing the row wider */
+}
+.page-head > .btn {
+  flex: 0 0 auto;
 }
 
 /* ---------- cards ---------- */
@@ -674,6 +684,9 @@ textarea:focus-visible {
   border-radius: var(--r-md);
   height: 34px;
   padding: 0 14px;
+  /* A button label is a single phrase — breaking it mid-label strands the
+     icon on its own line and inflates the control. */
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
