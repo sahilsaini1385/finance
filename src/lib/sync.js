@@ -10,12 +10,15 @@
 import { institutionFromOrg, guessAccountType, epochToISODate } from './simplefin.js'
 import { categorize } from './categorize.js'
 import { localToday } from './dates.js'
-import { uid } from '../store.jsx'
+import { uid } from './id.js'
 
 export function buildSyncPatch(payload, state) {
   const today = localToday()
   const bySimplefinId = new Map(state.accounts.filter(a => a.simplefinId).map(a => [a.simplefinId, a]))
   const existingHashes = new Set(state.transactions.map(t => t.hash))
+  // Rows the user deleted on purpose. Without this the next sync re-adds them,
+  // because dedupe only knows about transactions that are still here.
+  const deletedHashes = new Set(state.deletedTxHashes || [])
   // Tombstones are strings (legacy) or {id, name} objects.
   const ignored = new Set((state.ignoredSimplefinIds || []).map(p => (typeof p === 'string' ? p : p.id)))
 
@@ -68,6 +71,8 @@ export function buildSyncPatch(payload, state) {
         source: 'SimpleFIN',
         hash,
       }
+      // Deleted on purpose — skip it rather than re-adding it every sync.
+      if (deletedHashes.has(hash)) { txSkipped++; continue }
       if (existingHashes.has(hash)) {
         // Re-send of a known transaction: only meaningful when a pending item
         // posts (date/amount can shift). APPLY_SYNC updates it in place.

@@ -108,5 +108,24 @@ const near = (a, b, eps = 0.5) => Math.abs(a - b) < eps
   ok(/key/i.test(threw), 'finnhub without a key explains itself instead of calling out')
 }
 
+// ---- a vest in a LATER year starts from a clean slate ----
+{
+  const { nextVestOutlook } = await import('../../src/lib/vestTax.js')
+  const base = {
+    profile: { filingStatus: 'mfj' },
+    // this year's payroll: well past the SS wage base
+    __payrollYtd: { gross: 400000, rsuVested: 300000 },
+  }
+  const thisYearVest = nextVestOutlook(base, { nextVest: { date: '2026-12-01', units: 100, value: 50000 } }, { today: '2026-08-14' })
+  ok(thisYearVest.socialSecurity === 0 && thisYearVest.sameYear === true,
+    'a vest later THIS year inherits the year’s wages, so SS is already capped')
+  const nextYearVest = nextVestOutlook(base, { nextVest: { date: '2027-02-21', units: 100, value: 50000 } }, { today: '2026-08-14' })
+  ok(nextYearVest.sameYear === false, 'a vest next year is flagged as a different year')
+  ok(nextYearVest.socialSecurity > 0,
+    `next year the wage base resets, so SS is withheld again (${Math.round(nextYearVest.socialSecurity)})`)
+  ok(nextYearVest.federal === 50000 * 0.22,
+    'and the $1M supplemental threshold resets too, so it is back at 22%')
+}
+
 console.log(`\ntest-vesttax: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

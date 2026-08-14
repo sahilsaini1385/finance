@@ -16,9 +16,24 @@ const SYMBOL_RE = /^[A-Z][A-Z.\-]{0,6}$/
 // Some free endpoints reject requests with no (or a non-browser) User-Agent.
 const UA = 'Mozilla/5.0 (compatible; Budgie/1.0; +https://github.com/sahilsaini1385/finance)'
 
+// Without this a hanging upstream burns the whole function budget and the
+// second source never gets tried — the fallback would be decorative.
+const TIMEOUT_MS = 6000
+async function fetchWithTimeout(url, init) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal })
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? `timed out after ${TIMEOUT_MS / 1000}s` : e.message)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function fromStooq(symbol) {
   const url = `https://stooq.com/q/l/?s=${encodeURIComponent(symbol.toLowerCase())}.us&f=sd2t2ohlcv&h&e=csv`
-  const res = await fetch(url, { headers: { Accept: 'text/csv,*/*', 'User-Agent': UA } })
+  const res = await fetchWithTimeout(url, { headers: { Accept: 'text/csv,*/*', 'User-Agent': UA } })
   if (!res.ok) throw new Error(`stooq HTTP ${res.status}`)
   const text = await res.text()
   const lines = text.trim().split('\n')
@@ -41,7 +56,7 @@ async function fromStooq(symbol) {
 
 async function fromYahoo(symbol) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`
-  const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA } })
+  const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json', 'User-Agent': UA } })
   if (!res.ok) throw new Error(`yahoo HTTP ${res.status}`)
   const data = await res.json()
   const meta = data?.chart?.result?.[0]?.meta

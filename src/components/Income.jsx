@@ -13,6 +13,10 @@ import { useToast } from './Toaster.jsx'
 
 const thisYear = String(new Date().getFullYear())
 
+// States with no wage income tax — saying "state withholding not included"
+// there implies something is missing when nothing is.
+const NO_INCOME_TAX_STATES = ['AK', 'FL', 'NV', 'NH', 'SD', 'TN', 'TX', 'WA', 'WY']
+
 // "2026-07-31" reads like a database field; "Jul 31" reads like a date.
 const payDateLabel = iso =>
   iso ? new Date(iso + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
@@ -512,7 +516,7 @@ export default function Income() {
             const { facts } = resolveFacts(state)
             const gi = facts.grossIncome
             if (!gi || gi.source?.origin !== 'payroll') return null
-            const pctOfYear = summary.ytd.gross > 0 ? Math.round((summary.ytd.gross / gi.value) * 100) : 0
+            const pctOfYear = summary.ytd.gross > 0 && gi.value > 0 ? Math.round((summary.ytd.gross / gi.value) * 100) : 0
             return (
               <div className="income-projection">
                 <div className="stat-label">Projected {thisYear} gross income</div>
