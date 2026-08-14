@@ -156,6 +156,12 @@ export function buildFinancialContext(state) {
       return {
         name: g.name, target: r0(g.target), targetDate: g.targetDate || null,
         saved: r0(p.saved),
+        // Payroll money already contributed but not yet in the balance (an
+        // after-tax 401(k) awaiting its Roth conversion). The advisor must
+        // see it or it will tell the user a funded goal is stalled.
+        ...(p.pending > 0
+          ? { pendingPayrollConversion: r0(p.pending), securedTotal: r0(p.committed) }
+          : {}),
         depositPaceMonthly: r0(p.pace),
         neededMonthly: p.neededMonthly !== null ? r0(p.neededMonthly) : undefined,
         assumedAnnualReturnPct: p.returnPct,

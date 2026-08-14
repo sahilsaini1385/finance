@@ -12,6 +12,8 @@
 // UI — never silently baked in.
 
 import { localToday } from './dates.js'
+import { payrollInflowOutlook } from './yearOutlook.js'
+import { resolveFacts } from './facts.js'
 
 const num = v => {
   const n = parseFloat(v)
@@ -49,10 +51,28 @@ export function goalPace(state, goal, todayStr) {
     const m = t.date?.slice(0, 7)
     if (m in flows) flows[m] += num(t.amount) // net: deposits − withdrawals
   }
-  const pace = Math.round(window.reduce((s, m) => s + flows[m], 0) / window.length)
+  const txPace = Math.round(window.reduce((s, m) => s + flows[m], 0) / window.length)
 
-  const remaining = Math.max(0, target - saved)
-  const done = target > 0 && saved >= target
+  // Payroll money headed for this goal's accounts (after-tax 401(k) awaiting
+  // its year-end Roth conversion). It never appears as a deposit and isn't in
+  // the balance yet, so without this the goal looks stalled while it is
+  // actually funding faster than anything else.
+  const inflow = goal.payrollInflow
+    ? payrollInflowOutlook(state, {
+        source: goal.payrollInflow,
+        today,
+        employerMatch: resolveFacts(state).facts.employerMatch?.value || 0,
+      })
+    : null
+  // Real money the user owns, sitting in the plan rather than the account.
+  const pending = inflow ? Math.round(inflow.ytd) : 0
+  const inflowMonthly = inflow ? Math.round(inflow.monthly) : 0
+  const pace = txPace + inflowMonthly
+  // What the goal has actually secured: the balance plus what is in flight.
+  const committed = saved + pending
+
+  const remaining = Math.max(0, target - committed)
+  const done = target > 0 && committed >= target
   const monthsLeft = monthsUntil(goal.targetDate, today)
 
   const returnPct = Math.max(0, num(goal.returnPct))
@@ -63,7 +83,7 @@ export function goalPace(state, goal, todayStr) {
   if (!done && monthsLeft !== null && monthsLeft > 0) {
     if (i > 0) {
       const x = Math.pow(1 + i, monthsLeft)
-      neededMonthly = Math.max(0, ((target - saved * x) * i) / (x - 1))
+      neededMonthly = Math.max(0, ((target - committed * x) * i) / (x - 1))
     } else {
       neededMonthly = remaining / monthsLeft
     }
@@ -75,7 +95,7 @@ export function goalPace(state, goal, todayStr) {
   let etaMonths = null
   if (!done) {
     if (i > 0) {
-      const denom = saved + pace / i
+      const denom = committed + pace / i
       const numer = target + pace / i
       if (denom > 0 && numer / denom > 1) {
         etaMonths = Math.ceil(Math.log(numer / denom) / Math.log(1 + i))
@@ -93,10 +113,18 @@ export function goalPace(state, goal, todayStr) {
 
   let status
   if (done) status = 'done'
-  else if (ids.size === 0 || !sawAny) status = 'no-data'
+  // A payroll inflow IS the pace, so a goal fed that way is never "no-data"
+  // just because its account has no transactions.
+  else if ((ids.size === 0 || !sawAny) && !inflow) status = 'no-data'
   else if (neededMonthly !== null) status = pace >= neededMonthly * 0.95 ? 'on-track' : 'behind'
   else if (goal.targetDate && monthsLeft === 0 && remaining > 0) status = 'behind'
   else status = pace > 0 ? 'pacing' : 'stalled'
 
-  return { saved, target, remaining, pace, neededMonthly, monthsLeft, etaMonths, etaLabel, status, returnPct, months: window }
+  return {
+    saved, target, remaining, pace, neededMonthly, monthsLeft, etaMonths, etaLabel, status, returnPct,
+    months: window,
+    // saved = what is in the accounts; committed = that plus money already
+    // contributed through payroll and waiting on its conversion.
+    pending, committed, inflow, txPace, inflowMonthly,
+  }
 }

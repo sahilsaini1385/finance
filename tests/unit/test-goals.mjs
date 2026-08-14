@@ -93,5 +93,84 @@ console.log('AI context exposure')
   ok(goal.depositPaceMonthly > 0 && goal.status && goal.neededMonthly > 0, 'pace/status/needed ride along for the AI')
 }
 
+// After-tax 401(k) dollars fund a Roth without ever appearing as a deposit.
+// Before this, a goal linked to that Roth read as stalled while it was in fact
+// the fastest-funding thing the household had.
+console.log('Payroll inflow: money in the plan, not yet in the account')
+{
+  const YEAR = 2026
+  const withPayroll = (over = {}) => ({
+    ...mkState([], 100000),
+    accounts: [{ id: 'r1', type: 'roth ira', name: 'Roth', institution: 'F', balance: 100000 }],
+    profile: { filingStatus: 'mfj', state: 'WA', age: '38' },
+    paystubs: [{
+      id: 'p1', employer: 'ACME', payDate: `${YEAR}-07-31`, periodStart: `${YEAR}-07-16`, periodEnd: `${YEAR}-07-31`,
+      gross: 9000, grossYtd: 241246.95, net: 5000,
+      taxes: [{ label: 'Federal Income Tax', amount: 2000, ytd: 38123 }],
+      deductions: [
+        { label: '401K Pretax', amount: 900, ytd: 16643, pretax: true },
+        { label: '401K After Tax', amount: 1500, ytd: 22824, pretax: false },
+      ],
+      earnings: [{ label: 'Regular', amount: 9000, ytd: 241246.95 }],
+      totalTaxes: 2000, totalDeductions: 2400, balanced: false,
+    }],
+    ...over,
+  })
+  const linked = { id: 'gr', name: 'Roth', target: 250000, accountIds: ['r1'], targetDate: '2029-08-01', payrollInflow: 'k401AfterTax' }
+  const unlinked = { ...linked, payrollInflow: '' }
+  const s = withPayroll()
+
+  const off = goalPace(s, unlinked, TODAY)
+  ok(off.status === 'no-data' && off.pending === 0,
+    'without the link, an account with no transactions is unpaceable — the bug this fixes')
+
+  const on = goalPace(s, linked, TODAY)
+  ok(on.pending === 22824, `the after-tax contributed this year counts as secured (${on.pending})`)
+  ok(on.saved === 100000, 'the account balance itself is untouched — pending is reported separately')
+  ok(on.committed === 122824, 'committed = balance + what is in the plan')
+  ok(on.remaining === 250000 - 122824, 'remaining measures against committed, not the stale balance')
+  ok(on.status !== 'no-data', 'a payroll-funded goal is never "no pace known"')
+  ok(on.inflowMonthly > 3000 && on.txPace === 0, `pace comes entirely from payroll (${on.inflowMonthly}/mo)`)
+  ok(on.pace === on.inflowMonthly + on.txPace, 'total pace is deposits plus payroll')
+  ok(on.inflow.projected > on.inflow.ytd && on.inflow.short === 'after-tax 401(k)',
+    `the stream is described, not just totalled (${on.inflow.projected} by year end)`)
+  ok(on.etaMonths !== null && on.etaMonths < 40, `and it produces a real ETA (${on.etaMonths} months)`)
+
+  // Deposits and payroll add up rather than replacing one another.
+  const both = goalPace(
+    { ...withPayroll(), transactions: [dep('a', '2026-05-15', 500, 'r1'), dep('b', '2026-06-15', 500, 'r1'), dep('c', '2026-07-15', 500, 'r1')] },
+    linked, TODAY,
+  )
+  ok(both.txPace === 500 && both.pace === 500 + both.inflowMonthly, 'deposits and payroll both count')
+
+  // The projection can't exceed what 415(c) still allows.
+  ok(on.inflow.projected <= 72000 - 24500, 'the year-end projection respects the 415(c) ceiling')
+
+  // No after-tax dollars on the statements → no stream to claim. This is also
+  // what stops January (last year's contributions already converted into the
+  // balance) from counting the same money twice.
+  const noAfterTax = withPayroll()
+  noAfterTax.paystubs[0].deductions = [{ label: '401K Pretax', amount: 900, ytd: 16643, pretax: true }]
+  const none = goalPace(noAfterTax, linked, TODAY)
+  ok(none.inflow === null && none.pending === 0 && none.committed === none.saved,
+    'a goal linked to a stream payroll does not show falls back to the balance alone')
+
+  const noPayroll = goalPace({ ...mkState([]), goals: [] }, linked, TODAY)
+  ok(noPayroll.pending === 0, 'no paystubs at all is handled')
+
+  // Everything above must leave ordinary goals exactly as they were.
+  const plain = goalPace(mkState([dep('a', '2026-05-15', 1000), dep('b', '2026-06-15', 1000), dep('c', '2026-07-15', 1000)]),
+    { id: 'g', name: 'House', target: 60000, accountIds: ['s1'], targetDate: '2028-08-01' }, TODAY)
+  ok(plain.committed === plain.saved && plain.pending === 0 && plain.pace === plain.txPace,
+    'a goal with no payroll link behaves exactly as before')
+
+  // The advisor has to see it too, or it will call a funded goal stalled.
+  const ctx = buildFinancialContext({ ...s, goals: [linked] })
+  ok(ctx.goals[0].pendingPayrollConversion === 22824 && ctx.goals[0].securedTotal === 122824,
+    'the AI context carries the in-flight money')
+  const ctxPlain = buildFinancialContext({ ...mkState([]), goals: [{ id: 'g', name: 'H', target: 1000, accountIds: ['s1'] }] })
+  ok(!('pendingPayrollConversion' in ctxPlain.goals[0]), 'and stays out of the payload when there is none')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
