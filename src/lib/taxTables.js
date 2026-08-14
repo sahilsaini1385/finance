@@ -18,6 +18,9 @@ export const LIMITS_BY_YEAR = {
     standardDeduction: { single: 15750, mfj: 31500, hoh: 23625 },
     // Roth IRA MAGI phase-out [start, end] (Rev. Proc. 2024-40)
     rothPhaseOut: { single: [150000, 165000], mfj: [236000, 246000], hoh: [150000, 165000] },
+    ssWageBase: 176100,
+    // Additional Medicare tax (0.9%) starts above these wages
+    medicareSurtaxAt: { single: 200000, mfj: 250000, hoh: 200000 },
   },
   2026: {
     year: 2026,
@@ -32,6 +35,11 @@ export const LIMITS_BY_YEAR = {
     standardDeduction: { single: 16100, mfj: 32200, hoh: 24150 },
     // Roth IRA MAGI phase-out [start, end] (Rev. Proc. 2025-32)
     rothPhaseOut: { single: [153000, 168000], mfj: [242000, 252000], hoh: [153000, 168000] },
+    ssWageBase: 184500,
+    // Additional Medicare tax (0.9%) starts above these wages. Unlike most
+    // limits these are NOT indexed — they have been fixed since 2013 — but
+    // they live here so nothing has to remember that.
+    medicareSurtaxAt: { single: 200000, mfj: 250000, hoh: 200000 },
   },
 }
 

@@ -212,6 +212,7 @@ export function summarize(rows, { category = 'all' } = {}) {
 // ---------- day grouping ----------
 
 export function dayLabel(date, today = localToday()) {
+  if (!date) return ''
   if (date === today) return 'Today'
   if (date === daysAgo(1, today)) return 'Yesterday'
   const d = new Date(date + 'T00:00')
@@ -225,6 +226,7 @@ export function groupByDay(rows, category = 'all', today = localToday()) {
   const days = []
   let cur = null
   for (const t of rows) {
+    if (!t.date) continue // a row with no date can't belong to a day
     if (!cur || cur.date !== t.date) {
       cur = { date: t.date, label: dayLabel(t.date, today), rows: [], net: 0 }
       days.push(cur)

@@ -23,9 +23,9 @@ const MEDICARE = 0.0145
 const MEDICARE_SURTAX = 0.009
 const SS_RATE = 0.062
 
-// 2026 figures; both move most years.
-const SS_WAGE_BASE = 184500
-const SURTAX_THRESHOLD = { single: 200000, hoh: 200000, mfj: 250000 }
+// The Social Security wage base moves every year, so it is year-keyed in
+// taxTables rather than frozen here — a hardcoded base silently overstates
+// withholding for every high earner the moment the calendar turns.
 
 export function supplementalFederal(amount, priorSupplementalYtd = 0) {
   const before = Math.max(0, priorSupplementalYtd)
@@ -44,7 +44,11 @@ export function vestWithholding({
   wagesYtd = 0,
   filingStatus = 'single',
   statePct = 0,
+  year = new Date().getFullYear(),
 }) {
+  const limits = limitsFor(Number(year))
+  const ssWageBase = limits.ssWageBase || 184500
+  const surtaxTable = limits.medicareSurtaxAt || { single: 200000, mfj: 250000, hoh: 200000 }
   const gross = Math.max(0, Number(amount) || 0)
   if (gross === 0) {
     return { gross: 0, federal: 0, socialSecurity: 0, medicare: 0, state: 0, withheld: 0, net: 0, rates: {} }
@@ -55,17 +59,20 @@ export function vestWithholding({
   // Social Security stops at the wage base — for a high earner most of the
   // year's vests have no SS withheld at all, and pretending otherwise
   // understates take-home by thousands.
-  const ssRoom = Math.max(0, SS_WAGE_BASE - Math.max(0, wagesYtd))
+  const ssRoom = Math.max(0, ssWageBase - Math.max(0, wagesYtd))
   const socialSecurity = Math.min(gross, ssRoom) * SS_RATE
 
-  const surtaxAt = SURTAX_THRESHOLD[filingStatus] ?? SURTAX_THRESHOLD.single
+  const surtaxAt = surtaxTable[filingStatus] ?? surtaxTable.single
   const overBefore = Math.max(0, wagesYtd - surtaxAt)
   const overAfter = Math.max(0, wagesYtd + gross - surtaxAt)
   const medicare = gross * MEDICARE + (overAfter - overBefore) * MEDICARE_SURTAX
 
-  const state = gross * (Math.max(0, Number(statePct) || 0) / 100)
+  // Clamped: a mistyped rate should not produce a negative paycheck.
+  const state = gross * (Math.min(100, Math.max(0, Number(statePct) || 0)) / 100)
 
-  const withheld = fed.tax + socialSecurity + medicare + state
+  // Withholding can never exceed the payment itself — a mistyped state rate
+  // should not render a negative paycheck.
+  const withheld = Math.min(gross, fed.tax + socialSecurity + medicare + state)
   return {
     gross,
     federal: fed.tax,
@@ -92,11 +99,18 @@ export function nextVestOutlook(state, summary, { today } = {}) {
   const profile = state.profile || {}
   const year = (today || new Date().toISOString().slice(0, 10)).slice(0, 4)
   const payroll = state.__payrollYtd || {}
+  const vestYear = s.nextVest.date.slice(0, 4)
 
+  // Year-to-date wages only apply to a vest in the SAME year. A vest next
+  // January starts from zero: the Social Security wage base and the $1M
+  // supplemental threshold both reset, so carrying this year's totals over
+  // would wrongly skip SS withholding and overstate take-home.
+  const sameYear = vestYear === year
   const withholding = vestWithholding({
+    year: Number(vestYear),
     amount: s.nextVest.value,
-    priorSupplementalYtd: Number(payroll.rsuVested) || 0,
-    wagesYtd: Number(payroll.gross) || 0,
+    priorSupplementalYtd: sameYear ? Number(payroll.rsuVested) || 0 : 0,
+    wagesYtd: sameYear ? Number(payroll.gross) || 0 : 0,
     filingStatus: profile.filingStatus || 'single',
     statePct: Number(profile.stateWithholdingPct) || 0,
   })
@@ -109,6 +123,7 @@ export function nextVestOutlook(state, summary, { today } = {}) {
     date: s.nextVest.date,
     units: s.nextVest.units,
     daysAway,
+    sameYear,
     ...withholding,
     year,
     limits: limitsFor(Number(year)),

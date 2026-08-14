@@ -28,8 +28,10 @@ const seed = {
   rsu: {
     symbol: 'AMZN', price: '267.28', basis: 'portal', lookup: null, quote: null,
     vests: [
-      { id: 'v1', date: future('02', '21'), units: 114, amount: 30469.92 },
-      { id: 'v2', date: future('05', '21'), units: 191, amount: 51050.48 },
+      // one later THIS year (so the next vest inherits this year's wages) and
+      // one next year — the year-reset case is unit-tested in test-vesttax
+      { id: 'v0', date: `${year}-11-15`, units: 114, amount: 30469.92 },
+      { id: 'v1', date: future('02', '21'), units: 191, amount: 51050.48 },
     ],
   },
 }

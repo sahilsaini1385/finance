@@ -25,12 +25,6 @@ export function validSymbol(sym) {
   return SYMBOL_RE.test(String(sym || '').trim().toUpperCase())
 }
 
-async function tryFetch(url, { signal, headers } = {}) {
-  const res = await fetch(url, { signal, headers })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res
-}
-
 // Stooq returns CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
 function parseStooqCsv(text) {
   const lines = String(text || '').trim().split('\n')

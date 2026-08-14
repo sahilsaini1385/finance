@@ -20,6 +20,7 @@ export const initialState = {
   },
   aiChat: [],        // advisor conversation: {role: 'user'|'assistant', content, at}
   ignoredSimplefinIds: [], // synced accounts the user deleted — never resurrect on sync
+  deletedTxHashes: [],     // synced transactions the user deleted — same, by hash
   documents: [],     // {id, section: 'tax'|'home', kind, year?, name, size, mime, uploadedAt, fields?, notes}
   history: [],       // net-worth snapshots: {date, netWorth, cash, investments, debt} — one per day
   reports: [],       // auto-archived month-end reports (see lib/report.js)
@@ -137,12 +138,31 @@ function reducer(state, action) {
     case 'ADD_TRANSACTIONS': {
       const existing = new Set(state.transactions.map(t => t.hash))
       const fresh = action.payload.filter(t => !existing.has(t.hash))
-      return { ...state, transactions: [...state.transactions, ...fresh] }
+      // Re-adding a row (an undo) lifts its tombstone — otherwise the undo
+      // works now and the next sync deletes it again.
+      const back = new Set(fresh.map(t => t.hash).filter(Boolean))
+      return {
+        ...state,
+        transactions: [...state.transactions, ...fresh],
+        deletedTxHashes: (state.deletedTxHashes || []).filter(h => !back.has(h)),
+      }
     }
     case 'UPDATE_TRANSACTION':
       return { ...state, transactions: state.transactions.map(t => (t.id === action.payload.id ? { ...t, ...action.payload } : t)) }
-    case 'DELETE_TRANSACTION':
-      return { ...state, transactions: state.transactions.filter(t => t.id !== action.payload) }
+    case 'DELETE_TRANSACTION': {
+      // Tombstone synced rows by hash, or the next sync re-adds them — the
+      // dedupe only knows about transactions still present. Manual rows have
+      // no hash and need no tombstone. Capped so the list can't grow forever.
+      const gone = state.transactions.find(t => t.id === action.payload)
+      const tombstones = gone?.hash
+        ? [...(state.deletedTxHashes || []).filter(h => h !== gone.hash), gone.hash].slice(-5000)
+        : state.deletedTxHashes || []
+      return {
+        ...state,
+        transactions: state.transactions.filter(t => t.id !== action.payload),
+        deletedTxHashes: tombstones,
+      }
+    }
     case 'ADD_BENEFIT':
       return { ...state, benefits: [...state.benefits, action.payload] }
     case 'UPDATE_BENEFIT':
@@ -485,9 +505,8 @@ export function useStore() {
   return useContext(StoreContext)
 }
 
-export function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
-}
+// Re-exported so the many components importing it from here keep working.
+export { uid } from './lib/id.js'
 
 export function fmt(n, opts = {}) {
   if (n === null || n === undefined || n === '' || Number.isNaN(Number(n))) return '—'
