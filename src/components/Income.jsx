@@ -1,7 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
 import { parsePaystub, paystubYearSummary, K401_TRAD_RE, K401_AFTER_RE, K401_ROTH_RE } from '../lib/income.js'
-import { parseVestSchedule, rsuSummary, vestValue } from '../lib/rsu.js'
+import { parseVestSchedule, rsuSummary, vestValue, vestBasisDiffers, effectivePrice } from '../lib/rsu.js'
+import { nextVestOutlook } from '../lib/vestTax.js'
+import { fetchQuote, quoteStatus, quoteAge, QUOTE_SOURCES, QUOTE_TTL_MS, validSymbol } from '../lib/quotes.js'
 import { resolveFacts, getDataConflicts } from '../lib/facts.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
 import { LIMITS_2026 } from '../lib/advisor.js'
@@ -10,6 +12,183 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
 const thisYear = String(new Date().getFullYear())
+
+// Optional share-price lookup. Off until switched on, and a fetched price is
+// only ever a suggestion — it lands in rsu.quote, never in the price field the
+// user typed, and never changes a number without being applied.
+function PriceLookup({ state, dispatch, toast }) {
+  const rsu = state.rsu || {}
+  const lookup = rsu.lookup
+  const quote = rsu.quote
+  const [busy, setBusy] = useState(false)
+  const [token, setToken] = useState(lookup?.token || '')
+  const abortRef = useRef(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const symbol = (rsu.symbol || '').trim().toUpperCase()
+  const status = quoteStatus(quote)
+
+  const run = async ({ silent } = {}) => {
+    if (!lookup || !validSymbol(symbol)) return
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setBusy(true)
+    try {
+      const q = await fetchQuote({
+        symbol,
+        sourceId: lookup.source,
+        token: lookup.token,
+        proxyUrl: state.connections?.simplefin?.proxyUrl,
+        signal: ctrl.signal,
+      })
+      dispatch({ type: 'SET_RSU', payload: { quote: q } })
+      if (!silent) toast(`${q.symbol} ${fmt(q.price, { maximumFractionDigits: 2 })}`, { kind: 'good' })
+    } catch (e) {
+      if (e.name !== 'AbortError' && !silent) {
+        toast(e.message, { kind: 'error', sticky: true })
+      }
+    }
+    setBusy(false)
+  }
+
+  // One quiet refresh per app load when the cached quote has aged out. Never
+  // on every render — request frequency is itself a signal about when this
+  // household opens its finances.
+  const autoRan = useRef(false)
+  useEffect(() => {
+    if (autoRan.current || !lookup || !validSymbol(symbol)) return
+    autoRan.current = true
+    if (quoteAge(quote) > QUOTE_TTL_MS) run({ silent: true })
+  }) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!lookup) {
+    return (
+      <div className="lookup-off">
+        <button className="btn small" onClick={() => dispatch({ type: 'SET_RSU', payload: { lookup: { source: 'stooq', token: '' } } })}>
+          <Icon name="trending-up" size={12} /> Look up {symbol || 'the'} share price
+        </button>
+        <p className="small muted" style={{ margin: '6px 0 0' }}>
+          Off by default. Turning it on lets this browser contact a price service directly and send
+          <strong> only the ticker symbol</strong> — never your holdings, vest schedule, or anything else in Budgie.
+          It stays on this device and is never shared by family sync.
+        </p>
+      </div>
+    )
+  }
+
+  const source = QUOTE_SOURCES[lookup.source] || QUOTE_SOURCES.stooq
+  return (
+    <div className="lookup-on">
+      <div className="row gap wrap" style={{ alignItems: 'center' }}>
+        {quote?.price > 0 ? (
+          <>
+            <span className="chip" title={`${quote.kind} from ${quote.source}`}>
+              {quote.symbol} {fmt(quote.price, { maximumFractionDigits: 2 })}
+            </span>
+            <span className={status.stale ? 'small' : 'small muted'} style={status.stale ? { color: 'var(--warning-text)' } : undefined}>
+              {status.label} · {quote.kind}
+            </span>
+            {Math.abs(Number(rsu.price || 0) - quote.price) > 0.005 && (
+              <button className="btn small" onClick={() => dispatch({ type: 'SET_RSU', payload: { price: String(quote.price) } })}>
+                Use this price
+              </button>
+            )}
+          </>
+        ) : (
+          <span className="small muted">No price fetched yet.</span>
+        )}
+        <button className="btn ghost small" onClick={() => run({})} disabled={busy || !validSymbol(symbol)}>
+          {busy ? 'Checking…' : 'Refresh'}
+        </button>
+      </div>
+
+      <details className="advanced" style={{ marginTop: 8 }}>
+        <summary>Price source</summary>
+        <div className="row gap wrap" style={{ marginTop: 8, alignItems: 'flex-end' }}>
+          <label className="field" style={{ flex: '1 1 200px' }}>
+            <span>Source</span>
+            <select value={lookup.source} onChange={e => dispatch({ type: 'SET_RSU', payload: { lookup: { ...lookup, source: e.target.value } } })}>
+              {Object.values(QUOTE_SOURCES).map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
+            </select>
+          </label>
+          {source.needsKey && (
+            <label className="field" style={{ flex: '1 1 240px' }}>
+              <span>API key</span>
+              <input type="password" value={token} placeholder="paste your key"
+                onChange={e => setToken(e.target.value)}
+                onBlur={() => dispatch({ type: 'SET_RSU', payload: { lookup: { ...lookup, token: token.trim() } } })} />
+            </label>
+          )}
+          <button className="btn danger small" onClick={() => {
+            dispatch({ type: 'SET_RSU', payload: { lookup: null, quote: null } })
+            toast('Price lookup off — key and cached price forgotten')
+          }}>Turn off</button>
+        </div>
+        <p className="small muted" style={{ marginTop: 6 }}>
+          {source.note}{source.keyHint ? ` ${source.keyHint}` : ''} Prices are delayed or previous-close;
+          Budgie never calls a free feed “live”.
+        </p>
+      </details>
+    </div>
+  )
+}
+
+// The one thing worth reading first: what actually lands from the next vest.
+// Withholding on equity follows the supplemental schedule, not your W-4, which
+// is exactly why equity-heavy households are surprised in April.
+function NextVestCard({ state }) {
+  const summary = useMemo(() => rsuSummary(state), [state.rsu])
+  const payroll = useMemo(() => paystubYearSummary(state, thisYear), [state.paystubs])
+  const outlook = useMemo(
+    () => nextVestOutlook({ ...state, __payrollYtd: payroll?.ytd || {} }, summary),
+    [state.rsu, state.profile, payroll],
+  )
+  if (!outlook) return null
+
+  const when = new Date(outlook.date + 'T00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+  const away = outlook.daysAway
+  const pctWithheld = Math.round(outlook.rates.effectivePct)
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="calendar" /></span> Your next vest</h2>
+      <div className="tx-answer-main money" style={{ fontSize: 20 }}>
+        ~{fmt(Math.round(outlook.net))} lands {away <= 0 ? 'today' : away === 1 ? 'tomorrow' : `in ${away} days`}
+      </div>
+      <p className="small muted money" style={{ margin: '4px 0 12px' }}>
+        {when} · {Math.round(outlook.units).toLocaleString()} shares · {fmt(Math.round(outlook.gross))} before withholding
+      </p>
+      <div className="stat-row cols-4">
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Federal</div>
+          <div className="stat-value money">{fmt(Math.round(outlook.federal))}</div>
+          <div className="stat-sub">{outlook.rates.hitHighBracket ? '22% then 37% past $1M' : '22% supplemental rate'}</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Social Security</div>
+          <div className="stat-value money">{fmt(Math.round(outlook.socialSecurity))}</div>
+          <div className="stat-sub">{outlook.socialSecurity === 0 ? 'past the wage base' : '6.2% to the wage base'}</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Medicare</div>
+          <div className="stat-value money">{fmt(Math.round(outlook.medicare))}</div>
+          <div className="stat-sub">1.45%{outlook.medicare > outlook.gross * 0.0146 ? ' + 0.9% surtax' : ''}</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Withheld</div>
+          <div className="stat-value money">{pctWithheld}%</div>
+          <div className="stat-sub">{fmt(Math.round(outlook.withheld))} of {fmt(Math.round(outlook.gross))}</div>
+        </div>
+      </div>
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        A withholding estimate, not a tax bill — companies withhold equity at a flat supplemental rate, so if
+        your marginal rate is higher you may still owe the difference in April. State withholding is not
+        included{state.profile?.state ? ` (${state.profile.state} rate not set)` : ''}.
+      </p>
+    </div>
+  )
+}
 
 // Unvested equity — future income, deliberately outside net worth. The
 // schedule feeds the reconciled gross-income estimate so taxes and the
@@ -24,6 +203,8 @@ function RsuCard({ state, dispatch, toast }) {
   const rsu = state.rsu || { symbol: '', price: '', vests: [] }
   const vests = rsu.vests || []
   const summary = rsuSummary(state)
+  const price = effectivePrice(rsu)
+  const basis = rsu.basis === 'price' ? 'price' : 'portal'
   const today = new Date().toISOString().slice(0, 10)
 
   const importPaste = () => {
@@ -97,10 +278,35 @@ function RsuCard({ state, dispatch, toast }) {
             onChange={e => dispatch({ type: 'SET_RSU', payload: { price: e.target.value } })} />
         </label>
       </div>
-      <p className="small muted" style={{ marginTop: -4 }}>
-        Used only for vests without their own dollar amount. Grant-portal estimates already baked into the
-        pasted schedule win over this price.
-      </p>
+      <PriceLookup state={state} dispatch={dispatch} toast={toast} />
+
+      <div className="basis-row">
+        <span className="tx-field-label">Value unvested shares at</span>
+        <div className="chip-grid">
+          <button
+            className={rsu.basis !== 'price' ? 'chip cat-chip on' : 'chip cat-chip'}
+            aria-pressed={rsu.basis !== 'price'}
+            onClick={() => dispatch({ type: 'SET_RSU', payload: { basis: 'portal' } })}
+          >
+            The amounts from my schedule
+          </button>
+          <button
+            className={rsu.basis === 'price' ? 'chip cat-chip on' : 'chip cat-chip'}
+            aria-pressed={rsu.basis === 'price'}
+            onClick={() => dispatch({ type: 'SET_RSU', payload: { basis: 'price' } })}
+            disabled={!(price > 0)}
+            title={price > 0 ? '' : 'Set a price first'}
+          >
+            {price > 0 ? `Today’s price (${fmt(price, { maximumFractionDigits: 2 })})` : 'Today’s price'}
+          </button>
+        </div>
+        <p className="small muted" style={{ margin: '6px 0 0' }}>
+          {rsu.basis === 'price'
+            ? 'Every vest with a unit count is valued at the price above, so the total moves with the market.'
+            : 'Pasted schedules carry dollar amounts frozen when you exported them — the price only fills in rows that have none.'}
+          {' '}This changes the Overview tile and the income used for tax estimates.
+        </p>
+      </div>
 
       {vests.length > 0 && (
         <div className="stat-row cols-4" style={{ marginBottom: 10 }}>
@@ -181,7 +387,12 @@ function RsuCard({ state, dispatch, toast }) {
               <tr key={v.id} style={v.date <= today ? { opacity: 0.55 } : undefined}>
                 <td>{v.date}</td>
                 <td className="num">{v.units ? Math.round(v.units).toLocaleString() : '—'}</td>
-                <td className="num">{fmt(vestValue(v, rsu.price))}</td>
+                <td className="num">
+                  {fmt(vestValue(v, price, basis))}
+                  {vestBasisDiffers(v, price) && (
+                    <div className="small muted">{basis === 'price' ? `at ${fmt(price, { maximumFractionDigits: 2 })}` : 'from schedule'}</div>
+                  )}
+                </td>
                 <td className="small">{v.date <= today ? <span className="badge" style={{ color: 'var(--text-2)', background: 'var(--surface-2)' }}>vested</span> : <span className="badge">upcoming</span>}</td>
                 <td className="row-actions">
                   <button className={armedVest === v.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => removeVest(v)}>
@@ -339,6 +550,7 @@ export default function Income() {
         </div>
       )}
 
+      <NextVestCard state={state} />
       <RsuCard state={state} dispatch={dispatch} toast={toast} />
 
       {stubs.length === 0 ? (

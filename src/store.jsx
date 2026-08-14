@@ -57,9 +57,14 @@ export const initialState = {
     volatility: '',
   },
   rsu: {             // unvested equity — future income, never an asset
-    symbol: '',      // ticker, cosmetic ("AMZN")
-    price: '',       // assumed $/share for vests without an explicit amount
+    symbol: '',      // ticker, e.g. "AMZN"
+    price: '',       // price you typed; always beats a fetched quote
+    basis: 'portal', // 'portal' = trust exported dollar amounts | 'price' = value at price
     vests: [],       // {id, date: 'YYYY-MM-DD', units, amount} — amount optional
+    // Price lookup is OFF until you turn it on. Device-local: excluded from
+    // family sync so one phone can't start network calls from another.
+    lookup: null,    // {source: 'stooq'|'finnhub', token?} once enabled
+    quote: null,     // {price, asOf, kind, source, symbol} — last fetched
   },
   profile: {
     age: '',

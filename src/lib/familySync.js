@@ -252,7 +252,11 @@ export function threeWayMerge(base, local, remote) {
 // What crosses the wire: everything except per-device connections.
 export function toSyncedPayload(state) {
   const { claude, familySync, ...sharedConns } = state.connections || {}
-  return { ...state, connections: sharedConns }
+  // The price-lookup opt-in and its API key stay on the device that granted
+  // them. Syncing them would let one phone silently start network calls from
+  // another, on someone else's IP, without that person agreeing.
+  const { lookup, quote, ...sharedRsu } = state.rsu || {}
+  return { ...state, connections: sharedConns, rsu: sharedRsu }
 }
 
 export function fromSyncedPayload(payload, localState) {
@@ -262,6 +266,11 @@ export function fromSyncedPayload(payload, localState) {
       ...(payload.connections || {}),
       claude: localState.connections?.claude ?? null,
       familySync: localState.connections?.familySync ?? null,
+    },
+    rsu: {
+      ...(payload.rsu || {}),
+      lookup: localState.rsu?.lookup ?? null,
+      quote: localState.rsu?.quote ?? null,
     },
   }
 }
