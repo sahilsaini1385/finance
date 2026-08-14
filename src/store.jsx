@@ -433,11 +433,11 @@ export function StoreProvider({ children }) {
   // Transfer detection: pair equal-and-opposite amounts across accounts (card
   // payments, savings moves) and stamp everything examined as pairChecked.
   useEffect(() => {
-    const { transferIds, checkedIds } = scanForTransfers(state.transactions, state.accounts)
+    const { transferIds, checkedIds } = scanForTransfers(state.transactions, state.accounts, state.rules)
     if (checkedIds.length > 0) {
       dispatch({ type: 'APPLY_TRANSFER_SCAN', payload: { transferIds, checkedIds } })
     }
-  }, [state.transactions, state.accounts]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.transactions, state.accounts, state.rules]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Month-end report archiving: when the app runs after a month has closed,
   // archive that month's report (backfilling up to a year of missed months).

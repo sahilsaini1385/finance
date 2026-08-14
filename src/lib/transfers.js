@@ -24,8 +24,9 @@ export const TRANSFER_RE = new RegExp(
     `(payment|pymt|epay|e-pay)[^a-z]{0,15}(to )?(${ISSUERS})`,
     `(${ISSUERS})[^a-z]{0,15}(payment|pymt|epay|e-pay|autopay|directpay)`,
     'cardmember serv',
-    'payment thank you',
-    'payment received',
+    // Statements punctuate these freely: "PAYMENT - THANK YOU", "Payment/Thank You".
+    'payment[^a-z]{0,5}thank ?you',
+    'payment[^a-z]{0,5}received',
     'crd (pmt|payment)',
     'internet payment',
     'directpay',
@@ -34,6 +35,7 @@ export const TRANSFER_RE = new RegExp(
 )
 
 import { isSplit } from './tx.js'
+import { normalizeMerchant } from './savings.js'
 
 const DAY = 86400000
 const WINDOW_DAYS = 7
@@ -42,7 +44,10 @@ const WINDOW_DAYS = 7
 // scanned transactions get a re-sweep of the stateless layers (never pair
 // re-matching, so a category the user chose after the first scan is never
 // overridden). v3: large-credit heuristic on credit-card accounts.
-export const SCAN_VERSION = 3
+// v4: card accounts recognized by name too (so a mistyped account still gets
+// its payments caught), and payment-phrased rows corrected even when
+// auto-categorization already filed them under a spending category.
+export const SCAN_VERSION = 4
 
 // How big a lone credit-card credit must be before it's presumed a payment.
 // Real merchant refunds this large match an earlier charge on the same card;
@@ -52,7 +57,7 @@ const CC_PAYMENT_MIN = 500
 // Returns { transferIds: string[], checkedIds: string[] }
 // - transferIds: transactions to recategorize as Transfers
 // - checkedIds: every transaction examined this pass (stamp pairChecked)
-export function scanForTransfers(transactions, accounts = []) {
+export function scanForTransfers(transactions, accounts = [], rules = []) {
   const fresh = transactions.filter(t => !t.pairChecked)
   const stale = transactions.filter(t => t.pairChecked && t.pairChecked !== SCAN_VERSION)
   if (fresh.length === 0 && stale.length === 0) return { transferIds: [], checkedIds: [] }
@@ -97,11 +102,16 @@ export function scanForTransfers(transactions, accounts = []) {
     }
   }
 
-  // Keyword fallback — only for still-uncategorized rows, so a deliberate
-  // user categorization is never overridden. Stale rows (scanned under an
-  // older pattern set) get this layer too.
+  // Keyword fallback for when only one side of the pair is synced. Applies to
+  // uncategorized rows AND to rows auto-categorization mis-filed under a
+  // spending category — "PAYMENT - THANK YOU" is never a restaurant, and left
+  // in Dining it silently cancels the month's real spending. A merchant the
+  // user has categorized by hand (which writes a rule) is never touched.
+  const ruledMerchants = new Set((rules || []).map(r => r.match).filter(Boolean))
+  const userChose = t => ruledMerchants.has(normalizeMerchant(t.description || ''))
   for (const t of [...fresh, ...stale]) {
-    if (paired.has(t.id) || t.category !== 'Other' || isSplit(t)) continue
+    if (paired.has(t.id) || t.category === 'Transfers' || isSplit(t)) continue
+    if (t.category !== 'Other' && userChose(t)) continue
     if (TRANSFER_RE.test(t.description)) transferIds.add(t.id)
   }
 
@@ -111,11 +121,22 @@ export function scanForTransfers(transactions, accounts = []) {
   // there; a payment doesn't. This layer may override an auto-assigned
   // spending category — no real refund of this size lacks its charge — and
   // runs one-shot, so re-choosing a category afterwards sticks.
-  const ccIds = new Set(accounts.filter(a => a.type === 'credit card').map(a => a.id))
+  // Card accounts by declared type OR by an unmistakably card-ish name, so a
+  // card that synced in under the wrong type still gets its payments caught.
+  const ccIds = new Set(
+    accounts
+      .filter(a => {
+        const n = a.name || ''
+        if (/debit/i.test(n)) return false // a "Visa Debit" is a checking account
+        return a.type === 'credit card' || /visa|mastercard|amex|american express|discover|credit card/i.test(n)
+      })
+      .map(a => a.id),
+  )
   if (ccIds.size > 0) {
     for (const t of [...fresh, ...stale]) {
       if (paired.has(t.id) || transferIds.has(t.id) || isSplit(t)) continue
       if (!ccIds.has(t.accountId) || t.amount < CC_PAYMENT_MIN || t.category === 'Transfers') continue
+      if (userChose(t)) continue // the user has an opinion about this merchant
       const hasChargeMatch = (byAmount.get(Math.abs(t.amount).toFixed(2)) || []).some(
         c =>
           c.id !== t.id &&
