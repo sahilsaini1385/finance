@@ -4,8 +4,9 @@ import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
 import { goalPace } from '../lib/goals.js'
+import { payrollInflowOutlook, PAYROLL_INFLOWS } from '../lib/yearOutlook.js'
 
-const blank = { name: '', target: '', targetDate: '', accountIds: [], note: '', returnPct: '' }
+const blank = { name: '', target: '', targetDate: '', accountIds: [], note: '', returnPct: '', payrollInflow: '' }
 
 export default function Goals() {
   const { state, dispatch } = useStore()
@@ -21,6 +22,10 @@ export default function Goals() {
 
   const toggleAccount = id =>
     set('accountIds', form.accountIds.includes(id) ? form.accountIds.filter(x => x !== id) : [...form.accountIds, id])
+
+  // Only offer the payroll-inflow link when payroll actually shows the stream —
+  // an option nobody can use is just a question the form doesn't need to ask.
+  const availableInflow = payrollInflowOutlook(state, { source: 'k401AfterTax' })
 
   const submit = e => {
     e.preventDefault()
@@ -113,6 +118,25 @@ export default function Goals() {
               </div>
             )}
           </div>
+          {availableInflow && (
+            <div className="span-2">
+              <div className="small" style={{ marginBottom: 6, color: 'var(--text-2)', fontWeight: 500 }}>Also funded by payroll</div>
+              <label className="check-pill">
+                <input
+                  type="checkbox"
+                  checked={form.payrollInflow === 'k401AfterTax'}
+                  onChange={e => set('payrollInflow', e.target.checked ? 'k401AfterTax' : '')}
+                />
+                {PAYROLL_INFLOWS.k401AfterTax.label}
+              </label>
+              <p className="muted small" style={{ margin: '6px 0 0' }}>
+                Your statements show {fmt(availableInflow.ytd)} of after-tax 401(k) contributions this year, on pace
+                for {fmt(availableInflow.projected)} by December. That money never arrives as a deposit, so tick this
+                and the goal will count it — as money already secured, and as ~{fmt(Math.round(availableInflow.monthly))}/mo
+                of funding.
+              </p>
+            </div>
+          )}
           <div className="form-actions">
             <button className="btn primary" type="submit">{editingId ? 'Save changes' : 'Add goal'}</button>
             <button className="btn" type="button" onClick={() => { setEditingId(null); setShowForm(false); setForm(blank) }}>Cancel</button>
@@ -134,8 +158,13 @@ export default function Goals() {
           // One source of truth for all goal math (incl. the growth assumption).
           const p = goalPace(state, g)
           const saved = p.saved
-          const pct = g.target > 0 ? Math.min(100, (saved / g.target) * 100) : 0
-          const done = saved >= g.target
+          // The goal is measured on what it has secured: the balance plus
+          // payroll money still waiting on its conversion.
+          const committed = p.committed
+          const pct = g.target > 0 ? Math.min(100, (committed / g.target) * 100) : 0
+          const pctSaved = g.target > 0 ? Math.min(100, (saved / g.target) * 100) : 0
+          const pctPending = Math.max(0, pct - pctSaved)
+          const done = committed >= g.target
           const months = p.monthsLeft
           const monthlyNeeded = p.neededMonthly
           const linkedCount = (g.accountIds || []).filter(id => state.accounts.some(a => a.id === id)).length
@@ -147,20 +176,32 @@ export default function Goals() {
                   {g.name}
                 </h2>
                 <div className="row gap">
-                  <button className="btn ghost small" onClick={() => { setEditingId(g.id); setShowForm(true); setForm({ name: g.name, target: String(g.target), targetDate: g.targetDate || '', accountIds: g.accountIds || [], note: g.note || '', returnPct: g.returnPct ? String(g.returnPct) : '' }) }}>Edit</button>
+                  <button className="btn ghost small" onClick={() => { setEditingId(g.id); setShowForm(true); setForm({ name: g.name, target: String(g.target), targetDate: g.targetDate || '', accountIds: g.accountIds || [], note: g.note || '', returnPct: g.returnPct ? String(g.returnPct) : '', payrollInflow: g.payrollInflow || '' }) }}>Edit</button>
                   <button className={armedId === g.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(g)}>
                     {armedId === g.id ? 'Confirm?' : 'Delete'}
                   </button>
                 </div>
               </div>
               <div className="goal-numbers money">
-                <strong>{fmt(saved)}</strong>
+                <strong>{fmt(committed)}</strong>
                 <span className="muted"> of {fmt(g.target)} · {pct.toFixed(0)}%</span>
                 {done && <span className="delta-chip" style={{ verticalAlign: 1 }}>Funded 🎉</span>}
               </div>
-              <div className="meter" style={{ marginTop: 8 }}>
-                <div className="meter-fill" style={{ width: `${pct}%`, background: done ? 'var(--good)' : 'var(--accent)' }} />
+              <div className={p.pending > 0 ? 'meter split' : 'meter'} style={{ marginTop: 8 }}>
+                <div className="meter-fill" style={{ width: `${pctSaved}%`, background: done ? 'var(--good)' : 'var(--accent)' }} />
+                {p.pending > 0 && <div className="meter-fill pending" style={{ width: `${pctPending}%` }} />}
               </div>
+              {p.inflow && (
+                <div className="small money" style={{ marginTop: 8 }}>
+                  <strong>{fmt(saved)}</strong> in the account
+                  {' + '}<strong>{fmt(p.pending)}</strong> in the plan — after-tax 401(k) contributed this year,
+                  moving here when the conversion posts.
+                  <span className="muted">
+                    {' '}On pace for {fmt(p.inflow.projected)} this year (~{fmt(p.inflowMonthly)}/mo)
+                    {p.inflow.capped && ', capped by the 415(c) ceiling'}.
+                  </span>
+                </div>
+              )}
               <div className="muted small" style={{ marginTop: 8 }}>
                 {linkedCount === 0
                   ? 'No accounts linked — edit the goal to link funding accounts.'
@@ -184,7 +225,11 @@ export default function Goals() {
                     </div>
                   ) : null
                 }
-                const paceText = p.pace > 0
+                const paceText = p.inflow && p.pace > 0
+                  ? p.txPace !== 0
+                    ? `Adding ~${fmt(p.pace)}/mo — ${fmt(p.inflowMonthly)} from your ${p.inflow.short}, ${fmt(p.txPace)} in deposits (net, last 3 months)`
+                    : `Adding ~${fmt(p.pace)}/mo from your ${p.inflow.short}`
+                  : p.pace > 0
                   ? `Adding ~${fmt(p.pace)}/mo (net, last 3 months)`
                   : p.pace < 0
                     ? `Net withdrawals of ~${fmt(-p.pace)}/mo over the last 3 months`

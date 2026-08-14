@@ -1113,6 +1113,18 @@ textarea:focus-visible {
   border-radius: inherit;
   transition: width var(--dur-3) var(--ease-out);
 }
+/* Two-segment meter: solid is money in the account, striped is money already
+   contributed through payroll but still waiting on its conversion. Distinct
+   enough that nobody mistakes in-flight money for a settled balance. */
+.meter.split { display: flex; }
+.meter.split .meter-fill { border-radius: 0; flex: none; }
+.meter-fill.pending {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--accent) 55%, transparent) 0 3px,
+    color-mix(in srgb, var(--accent) 22%, transparent) 3px 6px
+  );
+}
 .progress-segments {
   display: flex;
   gap: 4px;

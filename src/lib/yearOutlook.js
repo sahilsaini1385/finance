@@ -206,3 +206,60 @@ export function megaBackdoorOutlook(state, { year, today, employerMatch = 0 } = 
 export function yearOutlook(state, opts = {}) {
   return { tax: taxOutlook(state, opts), lane: megaBackdoorOutlook(state, opts) }
 }
+
+// ---------- payroll money headed for an account ----------
+//
+// Some savings never appear as a deposit. After-tax 401(k) dollars come out of
+// payroll all year and only land in the Roth when the conversion posts — so a
+// goal linked to that Roth sees no transactions and a balance that ignores
+// everything contributed since January. It reads as stalled while it is in
+// fact the fastest-funding goal the household has.
+//
+// This describes such a stream: what is already in the plan (real money the
+// user owns, just not in the account yet), and what the year will add.
+
+export const PAYROLL_INFLOWS = {
+  k401AfterTax: {
+    id: 'k401AfterTax',
+    label: 'After-tax 401(k), converted at year end',
+    short: 'after-tax 401(k)',
+    // Contributed through payroll, held in the plan, moved into the linked
+    // account in one lump when the conversion runs.
+    holdsUntilConversion: true,
+  },
+}
+
+// → { source, ytd, projected, remaining, monthly, capped } or null when the
+// stream doesn't exist in this household's payroll.
+export function payrollInflowOutlook(state, { source = 'k401AfterTax', year, today, employerMatch = 0 } = {}) {
+  const spec = PAYROLL_INFLOWS[source]
+  if (!spec) return null
+  const y = Number(year) || Number((today || new Date().toISOString().slice(0, 10)).slice(0, 4))
+  const lane = megaBackdoorOutlook(state, { year: y, today, employerMatch })
+  if (!lane) return null
+  const ytd = lane.afterTaxYtd
+  // No after-tax dollars on this year's statements means nothing to project.
+  // In January that is also what stops last year's contributions — already
+  // converted and sitting in the balance — from being counted a second time.
+  if (!(ytd > 0)) return null
+
+  // The pace can't exceed what 415(c) still allows.
+  const ceiling = ytd + lane.room
+  const projected = Math.min(lane.afterTaxPace, ceiling)
+
+  return {
+    source: spec.id,
+    label: spec.label,
+    short: spec.short,
+    year: y,
+    asOf: lane.asOf,
+    ytd,
+    projected,
+    remaining: Math.max(0, projected - ytd),
+    // Annual rate spread monthly: the run rate a multi-year goal should
+    // assume, not just what is left of this year.
+    monthly: projected / 12,
+    capped: lane.afterTaxPace > projected,
+    periodsLeft: lane.periodsLeft,
+  }
+}

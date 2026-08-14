@@ -25,7 +25,10 @@ export const initialState = {
   history: [],       // net-worth snapshots: {date, netWorth, cash, investments, debt} — one per day
   reports: [],       // auto-archived month-end reports (see lib/report.js)
   rules: [],         // categorization rules: {id, match (normalized merchant), category}
-  goals: [],         // {id, name, target, accountIds: [], targetDate, note}
+  // {id, name, target, accountIds: [], targetDate, note, returnPct,
+  //  payrollInflow} — payrollInflow names a payroll stream that funds this
+  //  goal without ever appearing as a deposit (see lib/yearOutlook.js).
+  goals: [],
   homeBills: [],     // {id, month: 'YYYY-MM', type, amount, hasFile, note}
   budgets: {},       // budget TEMPLATE: {category: monthlyAmount} — the default month
   budgetMonths: {},  // per-month overrides: {'YYYY-MM': {category: amount}}
