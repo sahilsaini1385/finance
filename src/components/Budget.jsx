@@ -12,7 +12,7 @@ import { localMonth, localToday } from '../lib/dates.js'
 import { txParts } from '../lib/tx.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
-import { useAutoCategorize } from './useAutoCategorize.js'
+import { useAutoCategorize, mergeCount, merchantLabel, isExcludedCategory } from './useAutoCategorize.js'
 
 function shiftMonth(month, delta) {
   const d = new Date(month + '-02')
@@ -130,7 +130,21 @@ export default function Budget() {
       { kind: applied > 0 ? 'good' : 'info' })
   }
 
-  const reviewTx = useAutoCategorize()
+  const { applyOne, applyToMerchant } = useAutoCategorize()
+  // One row by default. If other charges at the same merchant would also move,
+  // say how many and offer it — never rewrite years of history on a dropdown
+  // change with a four-second window to notice.
+  const reviewTx = (t, category) => {
+    applyOne(t, category)
+    const n = mergeCount(state, t, category)
+    if (n > 0) {
+      toast(
+        `Moved to ${category} · ${n} other ${merchantLabel(t)} charge${n === 1 ? '' : 's'} match${
+          isExcludedCategory(category) ? ` · ${category} isn't counted as spending` : ''}`,
+        { sticky: true, action: { label: `Change all ${n}`, onClick: () => applyToMerchant(t, category) } },
+      )
+    }
+  }
 
   // Move money between envelopes for this month (YNAB's "cover overspending").
   // Capped at what the source envelope actually holds — moving can never
