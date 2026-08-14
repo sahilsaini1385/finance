@@ -113,6 +113,44 @@ const base = txs => ({ transactions: txs, accounts: [], budgets: {}, budgetMonth
     ok(checkedIds.includes('old'), 'and re-stamped so it never re-runs')
   }
 
+  // v4: the card is recognized by NAME, so an account that synced in with the
+  // wrong type still gets its payments caught (the reported case — a BofA
+  // Visa typed as something other than 'credit card').
+  {
+    const mistyped = [{ id: 'card', type: 'other', name: 'Atmos Rewards Ascent Visa Signature- 7693' }]
+    const { transferIds } = scanForTransfers([
+      { id: 'p', accountId: 'card', date: '2026-08-05', description: 'ONLINE PAYMENT', amount: 10000, category: 'Dining' },
+      { id: 'd1', accountId: 'card', date: '2026-08-10', description: 'Supreme Dumplings', amount: -70, category: 'Dining' },
+    ], mistyped)
+    ok(transferIds.includes('p'), 'card recognized by name → payment flipped despite the wrong account type')
+    ok(!transferIds.includes('d1'), 'dining charge on the same card untouched')
+  }
+  {
+    const debit = [{ id: 'chk', type: 'checking', name: 'Visa Debit Checking' }]
+    const { transferIds } = scanForTransfers([
+      { id: 'dep', accountId: 'chk', date: '2026-08-05', description: 'Deposit', amount: 9000, category: 'Other' },
+    ], debit)
+    ok(!transferIds.includes('dep'), '"Visa Debit" is a checking account, not a card')
+  }
+
+  // v4: payment-phrased rows are corrected even when already categorized...
+  {
+    const { transferIds } = scanForTransfers([
+      { id: 'k', accountId: 'card', date: '2026-08-05', description: 'PAYMENT - THANK YOU', amount: 250, category: 'Dining' },
+    ], cc)
+    ok(transferIds.includes('k'), 'payment phrasing beats an auto-assigned spending category')
+  }
+  // ...but never when the user categorized that merchant by hand (writes a rule)
+  {
+    const { normalizeMerchant } = await import('../../src/lib/savings.js')
+    const desc = 'SQUARE PAYMENT THANK YOU CAFE'
+    const rules = [{ id: 'r', match: normalizeMerchant(desc), category: 'Dining' }]
+    const { transferIds } = scanForTransfers([
+      { id: 'u', accountId: 'card', date: '2026-08-05', description: desc, amount: 40, category: 'Dining' },
+    ], cc, rules)
+    ok(!transferIds.includes('u'), "a merchant the user categorized by hand is never overridden")
+  }
+
   // pair matching still wins when both sides are synced
   {
     const { transferIds } = scan([

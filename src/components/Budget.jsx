@@ -331,6 +331,11 @@ export default function Budget() {
       </tr>
       {isOpen && (() => {
         const rows = catBreakdown(cat)
+        // When credits zeroed the envelope, the credit IS the story — float it
+        // to the top instead of burying it under every charge.
+        if (s === 0 && (grossByCat[cat] || 0) > 0) {
+          rows.sort((a, b) => (b.amount > 0 ? 1 : 0) - (a.amount > 0 ? 1 : 0) || a.amount - b.amount)
+        }
         const net = rows.reduce((sum, r) => sum + -r.amount, 0)
         return (
           <tr>
@@ -372,8 +377,8 @@ export default function Budget() {
                   <p className="small muted money" style={{ margin: '6px 0 0' }}>
                     {rows.length > 40 && `Showing the 40 largest of ${rows.length} · `}
                     {rows.length} transaction{rows.length > 1 ? 's' : ''} net to <strong>{fmt(Math.max(0, net))}</strong>
-                    {net < 0 && ' (refunds exceed spending this month, so the envelope counts $0)'}
-                    {' '}— that's the Spent figure above. Fix a category on the Transactions tab.
+                    {net <= 0 && ' — credits cancel out the charges, so the envelope counts $0. If a credit shown above is really a card payment or transfer, set its category to Transfers and it will stop offsetting your spending.'}
+                    {net > 0 && " — that's the Spent figure above. Fix a category right here or on the Transactions tab."}
                   </p>
                 </div>
               )}
