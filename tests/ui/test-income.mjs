@@ -20,8 +20,11 @@ const seed = {
   paystubs: [{
     id: 'p1', employer: 'ACME', payDate: `${year}-07-31`, periodStart: `${year}-07-01`, periodEnd: `${year}-07-31`,
     gross: 20510.68, grossYtd: 241246.95, net: 9249.87, fedTaxable: 18000,
-    taxes: [{ label: 'Federal Income Tax', amount: 4000, ytd: 52000 }],
-    deductions: [{ label: '401K Pretax', amount: 0, ytd: 24500, pretax: true }],
+    taxes: [{ label: 'Federal Income Tax', amount: 4000, ytd: 38123 }],
+    deductions: [
+      { label: '401K Pretax', amount: 0, ytd: 24500, pretax: true },
+      { label: '401K After Tax', amount: 1500, ytd: 22824, pretax: false },
+    ],
     earnings: [{ label: 'Rsu Vest', amount: 105327.23, ytd: 105327.23 }],
     totalTaxes: 4000, totalDeductions: 7260.81, balanced: true,
   }],
@@ -60,7 +63,7 @@ ok(/\$24,500/.test(await ytdCard.innerText()), 'maxed 401(k) still reads its YTD
 ok(/limit reached/i.test(await ytdCard.innerText()), 'and the page says the limit is reached')
 
 console.log('YTD is labelled, and the full-year projection leads')
-const proj = page.locator('.income-projection')
+const proj = ytdCard.locator('.income-projection')
 ok(await proj.count() === 1, 'projection block present')
 const projText = await proj.innerText()
 ok(/Projected \d{4} gross income/i.test(projText), 'the big number says what it is')
@@ -79,6 +82,34 @@ ok(/lands in \d+ days/.test(vestText), `says when it lands (${vestText.split('\n
 ok(/\$2[0-9],\d\d\d/.test(vestText), 'shows a take-home figure, not just the gross')
 ok(/past the wage base/.test(vestText), 'knows Social Security stopped — this user is well past it')
 ok(/withholding estimate, not a tax bill/i.test(vestText), 'discloses that it is withholding, not a bill')
+
+console.log('The full-year tax projection')
+const taxCard = page.locator('.card', { hasText: `${year} tax picture` })
+ok(await taxCard.count() === 1, 'tax picture card present')
+const taxText = await taxCard.innerText()
+ok(/Estimated shortfall at filing/i.test(taxText), 'says which way the year is going')
+ok(/~\$[\d,]+/.test(taxText), 'leads with a dollar figure')
+const owed = Number((taxText.match(/~\$([\d,]+)/) || [])[1]?.replace(/,/g, '') || 0)
+ok(owed > 1000 && owed < 20000, `a shortfall in a believable range ($${owed.toLocaleString()})`)
+ok(/Projected gross/i.test(taxText) && /Taxable income/i.test(taxText), 'shows the inputs, not just the answer')
+ok(/withheld/.test(taxText) && /projected federal tax/.test(taxText), 'compares withholding against the tax')
+ok(/flat 22%/.test(taxText) && /bracket/.test(taxText), 'explains the supplemental-rate gap that causes it')
+ok(/extra per paycheck/.test(taxText), 'offers the per-paycheck fix')
+ok(/An estimate, not a return/.test(taxText), 'discloses that it is an estimate')
+ok(/WA has no income tax/.test(taxText), 'no false "state not included" warning in a no-income-tax state')
+ok(/No spouse income is on file/.test(taxText), 'names the missing input rather than hiding it')
+
+console.log('The after-tax 401(k) lane')
+const laneCard = page.locator('.card', { hasText: 'After-tax 401(k) room' })
+ok(await laneCard.count() === 1, 'lane card present')
+const laneText = await laneCard.innerText()
+ok(/\$72,000/.test(laneText), 'measures against the 415(c) ceiling, not the deferral limit')
+ok(/\$22,824/.test(laneText), 'counts the after-tax dollars already contributed')
+ok(/\$24,676/.test(laneText), 'room left is 72,000 − 24,500 deferrals − 22,824 after-tax')
+ok(/doesn’t carry forward/.test(laneText), 'says the room expires')
+ok(/per remaining paycheck/.test(laneText), 'converts the room into an action')
+ok(/no match on file/.test(laneText), 'an unknown employer match is shown as unknown, not as zero-and-fine')
+ok(/your plan allows this lane/.test(laneText), 'after-tax dollars on the paystub prove the plan supports it')
 
 console.log('Valuation basis: a price only matters once you say it does')
 const rsuCard = page.locator('.card', { hasText: 'RSU vesting schedule' })

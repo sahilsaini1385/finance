@@ -3,6 +3,7 @@ import { useStore, uid, fmt } from '../store.jsx'
 import { parsePaystub, paystubYearSummary, K401_TRAD_RE, K401_AFTER_RE, K401_ROTH_RE } from '../lib/income.js'
 import { parseVestSchedule, rsuSummary, vestValue, vestBasisDiffers, effectivePrice } from '../lib/rsu.js'
 import { nextVestOutlook } from '../lib/vestTax.js'
+import { taxOutlook, megaBackdoorOutlook } from '../lib/yearOutlook.js'
 import { fetchQuote, quoteStatus, quoteAge, QUOTE_SOURCES, QUOTE_TTL_MS, validSymbol } from '../lib/quotes.js'
 import { resolveFacts, getDataConflicts } from '../lib/facts.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
@@ -200,6 +201,167 @@ function NextVestCard({ state }) {
         A withholding estimate, not a tax bill — companies withhold equity at a flat supplemental rate, so if
         your marginal rate is higher you may still owe the difference in April. State withholding is not
         included{state.profile?.state ? ` (${state.profile.state} rate not set)` : ''}.
+      </p>
+    </div>
+  )
+}
+
+// Where the whole year lands. The near-term vest card answers "what arrives
+// next week"; this answers "what does April look like", which for an
+// equity-heavy household is the question with the expensive wrong answer.
+function YearTaxCard({ state, year }) {
+  const outlook = useMemo(() => taxOutlook(state, { year: Number(year) }), [state.paystubs, state.rsu, state.profile])
+  if (!outlook) return null
+  const o = outlook
+  const owes = o.owed > 0
+  const noStateTax = NO_INCOME_TAX_STATES.includes((state.profile?.state || '').toUpperCase())
+  // Withheld against tax owed — how full the tank is, capped so a refund
+  // doesn't overflow the bar.
+  const pctCovered = o.projectedTax > 0 ? Math.min(100, (o.projectedWithheld / o.projectedTax) * 100) : 0
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="pie-chart" /></span> Your {o.year} tax picture</h2>
+
+      {o.withholdingKnown ? (
+        <div className={owes ? 'income-projection warn' : 'income-projection good'}>
+          <div className="stat-label">{owes ? `Estimated shortfall at filing` : 'Estimated refund at filing'}</div>
+          <div className="income-projection-value money">~{fmt(owes ? o.owed : o.refund)}</div>
+          <div className="income-projection-bar" aria-hidden>
+            <div className="income-projection-fill" style={{ width: `${pctCovered}%` }} />
+          </div>
+          <p className="small muted money" style={{ margin: '6px 0 0' }}>
+            <strong>{fmt(o.projectedWithheld)} withheld</strong> by year end against <strong>{fmt(o.projectedTax)}</strong> of
+            projected federal tax ({Math.round(pctCovered)}% covered) — {fmt(o.withheldYtd)} of it already taken,
+            through {payDateLabel(o.asOf)}.
+          </p>
+        </div>
+      ) : (
+        <div className="income-projection">
+          <div className="stat-label">Projected {o.year} federal tax</div>
+          <div className="income-projection-value money">~{fmt(o.projectedTax)}</div>
+          <p className="small muted money" style={{ margin: '6px 0 0' }}>
+            No federal withholding row parsed from your statements, so Budgie can’t say whether you’re ahead or
+            behind — only what the year’s tax looks like.
+          </p>
+        </div>
+      )}
+
+      <div className="stat-row cols-4">
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Projected gross</div>
+          <div className="stat-value money">{fmt(o.gross)}</div>
+          <div className="stat-sub">{fmt(o.cashProjected)} cash + {fmt(o.rsuIncome)} equity</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Taxable income</div>
+          <div className="stat-value money">{fmt(o.taxableIncome)}</div>
+          <div className="stat-sub">after {fmt(o.tradProjected + o.pretaxProjected)} pre-tax and the {fmt(o.standardDeduction)} standard deduction</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Projected federal tax</div>
+          <div className="stat-value money">{fmt(o.projectedTax)}</div>
+          <div className="stat-sub">{o.effectiveRate.toFixed(1)}% of gross · {Math.round(o.marginalRate)}% on the next dollar</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Withheld by year end</div>
+          <div className="stat-value money">{fmt(o.projectedWithheld)}</div>
+          <div className="stat-sub">{fmt(o.withheldYtd)} so far, at your paycheck’s current rate</div>
+        </div>
+      </div>
+
+      {o.rsuIncome > 0 && o.rsuUnderWithheldPts > 0 && (
+        <p className="small money" style={{ marginTop: 12, marginBottom: 6 }}>
+          <strong>Why:</strong> {fmt(o.rsuIncome)} of your income is RSU vesting, withheld at a flat 22% while your
+          income lands in the {Math.round(o.marginalRate)}% bracket. That’s roughly {fmt(o.rsuShortfall)} of tax
+          the vests don’t cover — {owes
+            ? 'more than your paycheck withholding makes up, which is why the year ends short.'
+            : 'which your paycheck withholding is currently more than covering.'}
+        </p>
+      )}
+      {owes && o.perPaycheck > 0 && (
+        <p className="small money" style={{ marginBottom: 6 }}>
+          <strong>One fix:</strong> ~{fmt(o.perPaycheck)} extra per paycheck across your {o.periodsLeft} remaining
+          checks closes it — either as additional withholding on your W-4, or set aside for April.
+        </p>
+      )}
+
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        An estimate, not a return. Federal only{noStateTax ? ` (${(state.profile?.state || '').toUpperCase()} has no income tax)` : ', state not included'} —
+        it assumes the standard deduction, uses your income pace through {payDateLabel(o.asOf)}, and knows nothing
+        about investment income, credits, or itemized deductions.
+        {o.includesSpouse
+          ? ` Your spouse’s ${fmt(o.spouseIncome)} from the Advisor profile is included, with no withholding assumed on it.`
+          : ' No spouse income is on file, so a second earner would raise this.'}
+      </p>
+    </div>
+  )
+}
+
+// The 415(c) lane. The employee deferral limit is the famous number; the
+// annual-additions cap is the one with room left in it, and it expires
+// December 31 — unused space cannot be carried forward.
+function AfterTaxLaneCard({ state, year, employerMatch }) {
+  const lane = useMemo(
+    () => megaBackdoorOutlook(state, { year: Number(year), employerMatch }),
+    [state.paystubs, state.profile, employerMatch],
+  )
+  if (!lane) return null
+  const l = lane
+  const full = l.room === 0
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="target" /></span> After-tax 401(k) room</h2>
+      <div className={full ? 'income-projection good' : 'income-projection'}>
+        <div className="stat-label">{full ? `${l.year} 401(k) ceiling reached` : `Room left under the ${fmt(l.limit)} ceiling`}</div>
+        <div className="income-projection-value money">{fmt(l.room)}</div>
+        <div className="income-projection-bar" aria-hidden>
+          <div className="income-projection-fill" style={{ width: `${l.pctUsed}%` }} />
+        </div>
+        <p className="small muted money" style={{ margin: '6px 0 0' }}>
+          <strong>{fmt(l.used)} of {fmt(l.limit)}</strong> used ({Math.round(l.pctUsed)}%) — everything that goes into
+          your 401(k) counts: your deferrals, your employer’s money, and after-tax dollars. Room not used by
+          December 31 is gone; it doesn’t carry forward.
+        </p>
+      </div>
+
+      <div className="stat-row cols-4">
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Your deferrals</div>
+          <div className="stat-value money">{fmt(l.employeeAgainstCap)}</div>
+          <div className="stat-sub">projected for {l.year}{l.catchUpEligible ? ' · catch-up sits outside this cap' : ''}</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Employer money</div>
+          <div className="stat-value money">{l.matchKnown ? fmt(l.employerMatch) : '—'}</div>
+          <div className="stat-sub">{l.matchKnown ? 'match, from your benefits' : 'no match on file'}</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">After-tax · YTD</div>
+          <div className="stat-value money">{fmt(l.afterTaxYtd)}</div>
+          <div className="stat-sub">on pace for {fmt(l.afterTaxPace)} by year end</div>
+        </div>
+        <div className="stat-tile" style={{ cursor: 'default' }}>
+          <div className="stat-label">Room left</div>
+          <div className="stat-value money">{fmt(l.room)}</div>
+          <div className="stat-sub">{l.periodsLeft > 0 ? `${fmt(l.perPaycheck)} per remaining paycheck` : 'no paychecks left this year'}</div>
+        </div>
+      </div>
+
+      {!full && (
+        <p className="small money" style={{ marginTop: 12, marginBottom: 6 }}>
+          {l.unusedAtPace > 0
+            ? <>At your current after-tax rate you’ll finish about <strong>{fmt(l.unusedAtPace)}</strong> short of the ceiling.
+                Raising it to ~{fmt(l.perPaycheck)} per check for your {l.periodsLeft} remaining paychecks uses all of it.</>
+            : <>Your current after-tax rate is on track to use the full ceiling by year end.</>}
+        </p>
+      )}
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        {l.planSupports
+          ? 'Your statements already show after-tax 401(k) dollars, so your plan allows this lane. Converting them to Roth (in-plan conversion or an in-service rollover) is what makes it a “mega-backdoor” — check that your plan does it automatically, or earnings accrue as taxable.'
+          : 'This lane only exists if your plan allows after-tax contributions and in-plan Roth conversions — nothing on your statements shows after-tax dollars yet, so check your plan documents before counting on it.'}
+        {!l.matchKnown && ' No employer match is on file; add it under Benefits and this room will shrink by that amount.'}
       </p>
     </div>
   )
@@ -470,6 +632,7 @@ export default function Income() {
 
   const stubs = [...(state.paystubs || [])].sort((a, b) => (a.payDate < b.payDate ? 1 : -1))
   const summary = paystubYearSummary(state, thisYear)
+  const { facts } = resolveFacts(state)
   const k401Limit = LIMITS_2026.k401
   const k401Employee = summary ? summary.ytd.k401Trad + summary.ytd.k401Roth : 0
   // Pace: fraction of the year elapsed at the latest stub's pay date.
@@ -513,7 +676,6 @@ export default function Income() {
           <h2>{thisYear} income · {summary.employer || 'your employer'}</h2>
 
           {(() => {
-            const { facts } = resolveFacts(state)
             const gi = facts.grossIncome
             if (!gi || gi.source?.origin !== 'payroll') return null
             const pctOfYear = summary.ytd.gross > 0 && gi.value > 0 ? Math.round((summary.ytd.gross / gi.value) * 100) : 0
@@ -574,6 +736,8 @@ export default function Income() {
       )}
 
       <NextVestCard state={state} />
+      <YearTaxCard state={state} year={thisYear} />
+      <AfterTaxLaneCard state={state} year={thisYear} employerMatch={facts.employerMatch?.value || 0} />
       <RsuCard state={state} dispatch={dispatch} toast={toast} />
 
       {stubs.length === 0 ? (
