@@ -1865,3 +1865,16 @@ textarea:focus-visible {
   padding: 2px;
 }
 .toast-close:hover { opacity: 1; }
+
+/* ---------- income: price lookup and valuation basis ---------- */
+.lookup-off,
+.lookup-on {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.basis-row { margin: 4px 0 14px; }
+.basis-row .chip-grid { margin-top: 4px; }
+.chip.cat-chip:disabled { opacity: 0.5; cursor: not-allowed; }

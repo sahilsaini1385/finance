@@ -9,6 +9,14 @@ const num = v => {
   return Number.isNaN(n) ? 0 : n
 }
 
+// A price the user typed always wins over a fetched quote — a lookup is a
+// reference, never an authority.
+export function effectivePrice(rsu = {}) {
+  const typed = num(rsu.price)
+  if (typed > 0) return typed
+  return num(rsu.quote?.price)
+}
+
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }
 
 function parseDate(token) {
@@ -49,10 +57,28 @@ export function parseVestSchedule(text) {
   return out
 }
 
-export function vestValue(vest, pricePerShare = 0) {
+// How a vest is valued.
+//   'portal' (default, and what the app has always done): the dollar amount
+//     the equity portal exported wins; the price only fills in rows that have
+//     none. Faithful to the document, but frozen at export time.
+//   'price': value every row with units at units x price. This is what makes a
+//     current share price actually move the headline number.
+// Rows with units but no amount behave identically under both.
+export function vestValue(vest, pricePerShare = 0, basis = 'portal') {
   const explicit = num(vest.amount)
+  const units = num(vest.units)
+  const price = num(pricePerShare)
+  if (basis === 'price' && units > 0 && price > 0) return units * price
   if (explicit > 0) return explicit
-  return num(vest.units) * num(pricePerShare)
+  return units * price
+}
+
+// True when switching basis would change this row's value — drives the per-row
+// "portal $" vs "at $267.28" badge so the two bases are never silently mixed.
+export function vestBasisDiffers(vest, pricePerShare = 0) {
+  const a = vestValue(vest, pricePerShare, 'portal')
+  const b = vestValue(vest, pricePerShare, 'price')
+  return Math.abs(a - b) > 0.005
 }
 
 // → { totalUnvestedUnits, totalUnvestedValue, lastVestYear, nextVest,
@@ -60,7 +86,8 @@ export function vestValue(vest, pricePerShare = 0) {
 export function rsuSummary(state, todayStr) {
   const rsu = state.rsu || {}
   const vests = rsu.vests || []
-  const price = num(rsu.price)
+  const price = effectivePrice(rsu)
+  const basis = rsu.basis === 'price' ? 'price' : 'portal'
   const today = todayStr || new Date().toISOString().slice(0, 10)
   const year = today.slice(0, 4)
 
@@ -72,7 +99,7 @@ export function rsuSummary(state, todayStr) {
   const byYear = new Map()
   for (const v of [...vests].sort((a, b) => (a.date < b.date ? -1 : 1))) {
     if (v.date <= today) continue // already vested — payroll actuals own it
-    const value = vestValue(v, price)
+    const value = vestValue(v, price, basis)
     totalUnvestedUnits += num(v.units)
     totalUnvestedValue += value
     if (v.date.slice(0, 4) === year) remainingThisYear += value
@@ -99,8 +126,9 @@ export function rsuSummary(state, todayStr) {
 // the stub date so a vest already inside the YTD never counts twice.
 export function rsuScheduledAfter(state, afterDate, year) {
   const rsu = state.rsu || {}
-  const price = num(rsu.price)
+  const price = effectivePrice(rsu)
+  const basis = rsu.basis === 'price' ? 'price' : 'portal'
   return (rsu.vests || [])
     .filter(v => v.date > afterDate && v.date.slice(0, 4) === String(year))
-    .reduce((s, v) => s + vestValue(v, price), 0)
+    .reduce((s, v) => s + vestValue(v, price, basis), 0)
 }

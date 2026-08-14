@@ -44,7 +44,14 @@ const EARNING_LABELS = /^(Regular|Overtime|Holiday Pay|Bonus|Commission|Rsu Vest
 
 // Rows: "Label -current[*] [ytd]" (deduction/tax) or tax rows with YTD only.
 const NEG_ROW = new RegExp(String.raw`^([A-Za-z0-9][A-Za-z0-9 /&().'+-]{1,28}?)\s+-(${AMT})(\*)?(?:\s+(${AMT}))?(?:\s|$)`)
-const YTD_ONLY_ROW = new RegExp(String.raw`^([A-Za-z][A-Za-z0-9 /&().'+-]{1,28}?)\s+(${AMT})\s*$`)
+// Only these labels may be trusted from a YTD-only line — a bare
+// "Label 1,234.56" is ambiguous, so we accept it just for the capped benefits
+// where disappearing rows are expected.
+const BENEFIT_LABEL = /401.?k|401\(k\)|403.?b|roth|after.?tax|\bhsa\b|health sav|\bfsa\b|espp/i
+
+// Leading digit allowed so "401K Pretax" matches; a numeric-looking label is
+// harmless because every YTD-only row must also pass TAX_LABEL or BENEFIT_LABEL.
+const YTD_ONLY_ROW = new RegExp(String.raw`^([A-Za-z0-9][A-Za-z0-9 /&().'+-]{1,28}?)\s+(${AMT})\s*$`)
 
 export function parsePaystub(rawText) {
   if (!rawText || typeof rawText !== 'string') return null
@@ -103,11 +110,17 @@ export function parsePaystub(rawText) {
       continue
     }
 
-    // Tax rows that stopped accruing this period (e.g. Social Security after
-    // the wage cap) print only a YTD figure.
+    // Rows that stopped accruing this period print only a YTD figure: taxes
+    // after a wage cap (Social Security), and — the case that used to be
+    // dropped entirely — a benefit that has hit its annual limit. Losing a
+    // maxed-out 401(k) row made the YTD tile read $0 and told the user their
+    // whole contribution limit would go unused.
     const ytdOnly = line.match(YTD_ONLY_ROW)
-    if (ytdOnly && TAX_LABEL.test(ytdOnly[1])) {
-      taxes.push({ label: ytdOnly[1].trim(), amount: 0, ytd: parseAmount(ytdOnly[2]) })
+    if (ytdOnly) {
+      const label = ytdOnly[1].trim()
+      const row = { label, amount: 0, ytd: parseAmount(ytdOnly[2]) }
+      if (TAX_LABEL.test(label)) taxes.push(row)
+      else if (BENEFIT_LABEL.test(label)) deductions.push({ ...row, pretax: !K401_ROTH_RE.test(label) })
     }
   }
 
@@ -175,36 +188,78 @@ export function annualizeYtd(ytd, payDate) {
 
 // Latest paystub for a calendar year, plus the YTD picture the advisor and
 // AI context care about.
+// One stub's YTD picture, straight off its own columns.
+function stubYtd(s) {
+  return {
+    gross: s.grossYtd || 0,
+    federalTax: (s.taxes || []).filter(t => /federal income tax/i.test(t.label)).reduce((a, t) => a + t.ytd, 0),
+    allTaxes: (s.taxes || []).reduce((a, t) => a + t.ytd, 0),
+    k401Trad: dedSum(s, K401_TRAD_RE).ytd,
+    k401Roth: dedSum(s, K401_ROTH_RE).ytd,
+    k401AfterTax: dedSum(s, K401_AFTER_RE).ytd,
+    hsa: dedSum(s, HSA_RE).ytd,
+    rsuVested: (s.earnings || []).filter(e => /rsu/i.test(e.label)).reduce((a, e) => a + e.ytd, 0),
+    pretaxBenefits: (s.deductions || [])
+      .filter(d => d.pretax && !K401_TRAD_RE.test(d.label) && !K401_ROTH_RE.test(d.label) && !K401_AFTER_RE.test(d.label))
+      .reduce((a, d) => a + d.ytd, 0),
+  }
+}
+
+const YTD_KEYS = ['gross', 'federalTax', 'allTaxes', 'k401Trad', 'k401Roth', 'k401AfterTax', 'hsa', 'rsuVested', 'pretaxBenefits']
+
+// YTD reconciled across every stub in the year rather than read off the latest
+// one. Two reasons, both of which produced wrong numbers:
+//   - A row that stops accruing (a maxed-out 401(k), Social Security past the
+//     wage cap) disappears from later stubs. Reading only the latest stub made
+//     the figure collapse to $0 exactly when the user finished contributing.
+//     YTD is monotonic within an employer-year, so MAX across that employer's
+//     stubs recovers it.
+//   - After a mid-year job change the latest stub is the new employer's, whose
+//     YTD starts from zero. Limits like the 401(k) employee cap are per PERSON
+//     across employers, so sum the per-employer maxima.
+export function reconciledYtd(state, year) {
+  const stubs = (state.paystubs || []).filter(s => (s.payDate || '').startsWith(String(year)))
+  if (stubs.length === 0) return null
+  const byEmployer = new Map()
+  for (const s of stubs) {
+    const key = (s.employer || '').trim().toUpperCase() || '—'
+    if (!byEmployer.has(key)) byEmployer.set(key, [])
+    byEmployer.get(key).push(s)
+  }
+  const total = Object.fromEntries(YTD_KEYS.map(k => [k, 0]))
+  for (const group of byEmployer.values()) {
+    const maxima = Object.fromEntries(YTD_KEYS.map(k => [k, 0]))
+    for (const s of group) {
+      const y = stubYtd(s)
+      for (const k of YTD_KEYS) if (y[k] > maxima[k]) maxima[k] = y[k]
+    }
+    for (const k of YTD_KEYS) total[k] += maxima[k]
+  }
+  const round2 = n => Math.round(n * 100) / 100
+  for (const k of YTD_KEYS) total[k] = round2(total[k])
+  return { ytd: total, employers: [...byEmployer.keys()], multiEmployer: byEmployer.size > 1 }
+}
+
 export function paystubYearSummary(state, year) {
   const stubs = (state.paystubs || []).filter(s => (s.payDate || '').startsWith(String(year)))
   if (stubs.length === 0) return null
   const latest = stubs.reduce((a, b) => (a.payDate > b.payDate ? a : b))
-  const trad = dedSum(latest, K401_TRAD_RE)
-  const roth = dedSum(latest, K401_ROTH_RE)
-  const after = dedSum(latest, K401_AFTER_RE)
-  const hsa = dedSum(latest, HSA_RE)
+  const rec = reconciledYtd(state, year)
   const rsu = (latest.earnings || []).filter(e => /rsu/i.test(e.label))
   return {
     year: String(year),
     employer: latest.employer,
+    employers: rec.employers,
+    multiEmployer: rec.multiEmployer,
     latest,
     count: stubs.length,
     ytd: {
-      gross: latest.grossYtd || 0,
-      federalTax: (latest.taxes || []).filter(t => /federal income tax/i.test(t.label)).reduce((s, t) => s + t.ytd, 0),
-      allTaxes: (latest.taxes || []).reduce((s, t) => s + t.ytd, 0),
-      k401Trad: trad.ytd,
-      k401Roth: roth.ytd,
-      k401AfterTax: after.ytd,
-      hsa: hsa.ytd,
-      rsuVested: rsu.reduce((s, e) => s + e.ytd, 0),
-      // NOTE: includes HSA rows (they are pre-tax); subtract ytd.hsa when you
-      // need premiums-only. Excludes ALL 401(k) rows — a provider that marks
-      // a Roth row pre-tax must not land it here (it would double-subtract
-      // from the taxable base).
-      pretaxBenefits: (latest.deductions || [])
-        .filter(d => d.pretax && !K401_TRAD_RE.test(d.label) && !K401_ROTH_RE.test(d.label) && !K401_AFTER_RE.test(d.label))
-        .reduce((s, d) => s + d.ytd, 0),
+      ...rec.ytd,
+      // pretaxBenefits (from reconciledYtd) includes HSA rows, which are
+      // pre-tax; subtract ytd.hsa when you need premiums only. It excludes ALL
+      // 401(k) rows — a provider marking a Roth row pre-tax must not land here
+      // or it would double-subtract from the taxable base.
+      rsuVestedLatestStub: rsu.reduce((s, e) => s + e.ytd, 0),
     },
   }
 }
