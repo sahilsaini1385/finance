@@ -46,7 +46,14 @@ function PriceLookup({ state, dispatch, toast }) {
       if (!silent) toast(`${q.symbol} ${fmt(q.price, { maximumFractionDigits: 2 })}`, { kind: 'good' })
     } catch (e) {
       if (e.name !== 'AbortError' && !silent) {
-        toast(e.message, { kind: 'error', sticky: true })
+        const canSuggestFinnhub = lookup.source === 'keyless'
+        toast(e.message, {
+          kind: 'error',
+          sticky: true,
+          ...(canSuggestFinnhub
+            ? { action: { label: 'Use a Finnhub key', onClick: () => dispatch({ type: 'SET_RSU', payload: { lookup: { ...lookup, source: 'finnhub' } } }) } }
+            : {}),
+        })
       }
     }
     setBusy(false)
@@ -65,7 +72,7 @@ function PriceLookup({ state, dispatch, toast }) {
   if (!lookup) {
     return (
       <div className="lookup-off">
-        <button className="btn small" onClick={() => dispatch({ type: 'SET_RSU', payload: { lookup: { source: 'stooq', token: '' } } })}>
+        <button className="btn small" onClick={() => dispatch({ type: 'SET_RSU', payload: { lookup: { source: 'keyless', token: '' } } })}>
           <Icon name="trending-up" size={12} /> Look up {symbol || 'the'} share price
         </button>
         <p className="small muted" style={{ margin: '6px 0 0' }}>
@@ -77,7 +84,7 @@ function PriceLookup({ state, dispatch, toast }) {
     )
   }
 
-  const source = QUOTE_SOURCES[lookup.source] || QUOTE_SOURCES.stooq
+  const source = QUOTE_SOURCES[lookup.source] || QUOTE_SOURCES.keyless
   return (
     <div className="lookup-on">
       <div className="row gap wrap" style={{ alignItems: 'center' }}>

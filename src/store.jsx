@@ -63,7 +63,7 @@ export const initialState = {
     vests: [],       // {id, date: 'YYYY-MM-DD', units, amount} — amount optional
     // Price lookup is OFF until you turn it on. Device-local: excluded from
     // family sync so one phone can't start network calls from another.
-    lookup: null,    // {source: 'stooq'|'finnhub', token?} once enabled
+    lookup: null,    // {source: 'keyless'|'finnhub', token?} once enabled
     quote: null,     // {price, asOf, kind, source, symbol} — last fetched
   },
   profile: {
