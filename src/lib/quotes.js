@@ -6,15 +6,16 @@
 // user can accept — not an authority.
 //
 // Two sources, both free:
-//   stooq   — no signup, no key, previous close. Blocked by CORS in the
-//             browser, so it goes through the app's own stateless proxy.
-//   finnhub — the user's own free API key, intraday quote, 60 calls/min, and
-//             a free tier that explicitly covers personal non-commercial use.
+//   keyless — no signup. Public endpoints don't send CORS headers, so this
+//             goes through the app's own /api/quote, which tries more than one
+//             upstream and reports what each did. Free endpoints block server
+//             IPs and vanish without notice, so this path can fail.
+//   finnhub — the user's own free API key, fetched browser-direct with no
+//             middleman. More reliable precisely because there is no shared
+//             server IP to rate-limit or block.
 //
-// Transport is a ladder (same shape as simplefin.js): try direct, then the
-// same-origin proxy. That way the feature works whether or not a provider
-// sends CORS headers, and on a static copy with no proxy it degrades to the
-// cached or typed price instead of breaking.
+// Whatever happens, a failed lookup never destroys anything: the typed price
+// and the last cached quote both survive.
 
 export const QUOTE_TTL_MS = 15 * 60 * 1000
 
@@ -49,48 +50,69 @@ function parseStooqCsv(text) {
 }
 
 export const QUOTE_SOURCES = {
-  stooq: {
-    id: 'stooq',
-    label: 'Stooq (no signup)',
+  keyless: {
+    id: 'keyless',
+    label: 'Free — no signup',
     needsKey: false,
-    note: 'Previous close, updated daily. No account needed.',
+    note: 'Previous close from a public source, fetched through this app’s own endpoint. No account needed.',
     async fetchQuote({ symbol, signal, proxyUrl }) {
-      const target = `https://stooq.com/q/l/?s=${encodeURIComponent(symbol.toLowerCase())}.us&f=sd2t2ohlcv&h&e=csv`
-      const attempts = proxyUrl
-        ? [`${proxyUrl.replace(/\/$/, '')}/?url=${encodeURIComponent(target)}`]
-        : [target, `/api/quote?symbol=${encodeURIComponent(symbol)}`]
-      let lastError
-      for (const url of attempts) {
-        try {
-          const res = await tryFetch(url, { signal })
-          return parseStooqCsv(await res.text())
-        } catch (e) {
-          if (e.name === 'AbortError') throw e
-          lastError = e
-        }
+      // These sources don't send CORS headers, so the request goes through the
+      // app's own /api/quote (or a user-configured proxy). It returns a
+      // normalized quote, or a 502 explaining what each upstream did.
+      const url = proxyUrl
+        ? `${proxyUrl.replace(/\/$/, '')}/?url=${encodeURIComponent(`https://stooq.com/q/l/?s=${symbol.toLowerCase()}.us&f=sd2t2ohlcv&h&e=csv`)}`
+        : `/api/quote?symbol=${encodeURIComponent(symbol)}`
+      let res
+      try {
+        res = await fetch(url, { signal })
+      } catch (e) {
+        if (e.name === 'AbortError') throw e
+        throw new Error('Couldn’t reach the price endpoint. If you’re offline, the last price is still shown.')
       }
-      throw new Error(`Couldn’t reach Stooq (${lastError?.message || 'unknown'})`)
+      const body = await res.text()
+      if (!res.ok) {
+        let detail = ''
+        try {
+          const j = JSON.parse(body)
+          detail = [j.error, (j.tried || []).join('; '), j.hint].filter(Boolean).join(' — ')
+        } catch { detail = body.slice(0, 160) }
+        throw new Error(detail || `Price lookup failed (HTTP ${res.status}).`)
+      }
+      // JSON from /api/quote; CSV when a custom proxy fetched Stooq directly.
+      try {
+        const j = JSON.parse(body)
+        if (!(Number(j.price) > 0)) throw new Error('no price')
+        return { price: Number(j.price), asOf: j.asOf || new Date().toISOString(), kind: j.kind || 'previous close' }
+      } catch {
+        return parseStooqCsv(body)
+      }
     },
   },
 
   finnhub: {
     id: 'finnhub',
-    label: 'Finnhub (free key)',
+    label: 'Finnhub (your free key)',
     needsKey: true,
-    keyHint: 'Free at finnhub.io — personal use, 60 calls a minute.',
-    note: 'Intraday quote. Needs a free API key you paste below.',
+    keyHint: 'Sign up free at finnhub.io — personal use, 60 calls a minute.',
+    note: 'Intraday quote, fetched straight from your browser with no middleman.',
     async fetchQuote({ symbol, token, signal }) {
-      if (!token) throw new Error('Add your Finnhub API key first.')
-      const res = await tryFetch(
-        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(token)}`,
-        { signal },
-      ).catch(e => {
+      if (!token) throw new Error('Paste your Finnhub API key first.')
+      let res
+      try {
+        res = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(token)}`,
+          { signal },
+        )
+      } catch (e) {
         if (e.name === 'AbortError') throw e
-        throw new Error(`Couldn’t reach Finnhub (${e.message}). Check the key, or switch to Stooq.`)
-      })
+        throw new Error(`Couldn’t reach Finnhub (${e.message}).`)
+      }
+      if (res.status === 401 || res.status === 403) throw new Error('Finnhub rejected that API key.')
+      if (res.status === 429) throw new Error('Finnhub rate limit hit — try again in a minute.')
+      if (!res.ok) throw new Error(`Finnhub returned HTTP ${res.status}.`)
       const data = await res.json()
       const price = Number(data.c)
-      if (!Number.isFinite(price) || price <= 0) throw new Error('Finnhub returned no price for that symbol.')
+      if (!Number.isFinite(price) || price <= 0) throw new Error(`Finnhub has no price for ${symbol}.`)
       return {
         price,
         asOf: data.t ? new Date(data.t * 1000).toISOString() : new Date().toISOString(),
@@ -101,11 +123,11 @@ export const QUOTE_SOURCES = {
 }
 
 export function quoteSource(id) {
-  return QUOTE_SOURCES[id] || QUOTE_SOURCES.stooq
+  return QUOTE_SOURCES[id] || QUOTE_SOURCES.keyless
 }
 
 // → {price, asOf, kind, source, symbol}
-export async function fetchQuote({ symbol, sourceId = 'stooq', token, proxyUrl, signal }) {
+export async function fetchQuote({ symbol, sourceId = 'keyless', token, proxyUrl, signal }) {
   const sym = String(symbol || '').trim().toUpperCase()
   if (!validSymbol(sym)) throw new Error('Enter a ticker symbol first (e.g. AMZN).')
   const source = quoteSource(sourceId)

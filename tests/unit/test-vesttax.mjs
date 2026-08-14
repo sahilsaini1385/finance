@@ -86,7 +86,7 @@ const near = (a, b, eps = 0.5) => Math.abs(a - b) < eps
 {
   ok(validSymbol('AMZN') && validSymbol('BRK.B') && !validSymbol('') && !validSymbol('not a ticker'),
     'symbol validation gates what can reach the proxy')
-  ok(Object.keys(QUOTE_SOURCES).length === 2 && QUOTE_SOURCES.stooq.needsKey === false,
+  ok(Object.keys(QUOTE_SOURCES).length === 2 && QUOTE_SOURCES.keyless.needsKey === false,
     'a no-signup source exists')
   const now = Date.parse('2026-08-14T12:00:00Z')
   ok(!quoteStatus({ price: 1, asOf: '2026-08-14T11:50:00Z' }, now).stale, 'a fresh quote is not stale')

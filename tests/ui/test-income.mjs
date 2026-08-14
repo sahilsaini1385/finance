@@ -91,13 +91,13 @@ await off.getByRole('button', { name: /Look up AMZN share price/ }).click()
 await page.waitForTimeout(300)
 ok(await page.locator('.lookup-on').count() === 1, 'turning it on reveals the controls')
 const store = await page.evaluate(() => JSON.parse(localStorage.getItem('finance-app-v1')))
-ok(store.rsu.lookup?.source === 'stooq', 'defaults to the no-signup source')
+ok(store.rsu.lookup?.source === 'keyless', 'defaults to the no-signup source')
 ok(store.rsu.price === '300', 'the typed price is untouched by enabling lookup')
 
 console.log('A fetched quote is a suggestion, never an overwrite')
 await page.evaluate(() => {
   const s = JSON.parse(localStorage.getItem('finance-app-v1'))
-  s.rsu.quote = { symbol: 'AMZN', price: 231.4, asOf: new Date().toISOString(), kind: 'previous close', source: 'stooq' }
+  s.rsu.quote = { symbol: 'AMZN', price: 231.4, asOf: new Date().toISOString(), kind: 'previous close', source: 'keyless' }
   localStorage.setItem('finance-app-v1', JSON.stringify(s))
 })
 await page.reload({ waitUntil: 'networkidle' })
