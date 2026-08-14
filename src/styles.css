@@ -1906,6 +1906,20 @@ textarea:focus-visible {
   background: var(--accent);
   border-radius: var(--r-full);
 }
+/* Same block, coloured by what the number means: money you'll owe reads as a
+   warning, money coming back or space still open reads as neutral-good. */
+.income-projection.warn {
+  background: var(--tint-warning, color-mix(in srgb, var(--warning) 10%, transparent));
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.income-projection.warn .income-projection-bar { background: color-mix(in srgb, var(--warning) 18%, transparent); }
+.income-projection.warn .income-projection-fill { background: var(--warning); }
+.income-projection.good {
+  background: color-mix(in srgb, var(--good) 10%, transparent);
+  border-color: color-mix(in srgb, var(--good) 28%, transparent);
+}
+.income-projection.good .income-projection-bar { background: color-mix(in srgb, var(--good) 16%, transparent); }
+.income-projection.good .income-projection-fill { background: var(--good); }
 @media (max-width: 700px) {
   .income-projection-value { font-size: 26px; }
 }

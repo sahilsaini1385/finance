@@ -21,6 +21,10 @@ export const LIMITS_BY_YEAR = {
     ssWageBase: 176100,
     // Additional Medicare tax (0.9%) starts above these wages
     medicareSurtaxAt: { single: 200000, mfj: 250000, hoh: 200000 },
+    // IRC 415(c) annual additions cap: employee deferrals + employer money +
+    // after-tax, all in one plan. This is the ceiling the mega-backdoor lane
+    // runs up against. Catch-up contributions sit OUTSIDE it.
+    totalDC: 70000,
   },
   2026: {
     year: 2026,
@@ -40,6 +44,8 @@ export const LIMITS_BY_YEAR = {
     // limits these are NOT indexed — they have been fixed since 2013 — but
     // they live here so nothing has to remember that.
     medicareSurtaxAt: { single: 200000, mfj: 250000, hoh: 200000 },
+    // IRC 415(c) annual additions cap (Notice 2025-67). Catch-up is outside it.
+    totalDC: 72000,
   },
 }
 
