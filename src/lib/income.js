@@ -178,6 +178,12 @@ export function payFrequencyFromStubs(paystubs) {
 // Fraction of the year elapsed at a pay date (for annualizing YTD figures).
 export function yearFrac(payDate) {
   const d = new Date(payDate + 'T00:00')
+  // An unparseable date (a corrupted backup, a sync from a build with a
+  // different format) used to make this NaN, and annualizeYtd divides by it —
+  // one bad stub turned every projected figure on the page into NaN. A whole
+  // year is the safe answer: it annualizes to the YTD figure itself rather
+  // than inventing a multiple.
+  if (Number.isNaN(d.getTime())) return 1
   const start = new Date(`${d.getFullYear()}-01-01T00:00`)
   return Math.min(1, Math.max(0.02, (d - start + 86400000) / (365 * 86400000)))
 }

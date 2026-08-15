@@ -30,6 +30,9 @@ export function monthsUntil(dateStr, todayStr) {
   if (!dateStr) return null
   const now = todayStr ? new Date(todayStr + 'T00:00') : new Date()
   const d = new Date(dateStr + 'T00:00')
+  // A target date that won't parse is the same as no target date. Returning
+  // NaN instead put "NaN months to <garbage>" on the goal card.
+  if (Number.isNaN(d.getTime()) || Number.isNaN(now.getTime())) return null
   return Math.max(0, (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - now.getMonth())
 }
 

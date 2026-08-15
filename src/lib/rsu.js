@@ -70,7 +70,9 @@ export function vestValue(vest, pricePerShare = 0, basis = 'portal') {
   const price = num(pricePerShare)
   if (basis === 'price' && units > 0 && price > 0) return units * price
   if (explicit > 0) return explicit
-  return units * price
+  // Never negative: a mistyped unit count ("-5 units") rendered as "-$0", and
+  // a negative row would quietly reduce the unvested total.
+  return Math.max(0, units * price)
 }
 
 // True when switching basis would change this row's value — drives the per-row

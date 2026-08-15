@@ -14,6 +14,31 @@ page.on('pageerror', e => errors.push(String(e)))
 let pass = 0, fail = 0
 const ok = (cond, name) => { cond ? (pass++, console.log(`  ✓ ${name}`)) : (fail++, console.error(`  ✗ ${name}`)) }
 
+// Dates are relative to today. This suite used to hardcode Aug-15-2026 and
+// asserted that vest was still unvested — so it passed until Aug 15 2026 and
+// failed every day after, because a vest dated today is already vested (the
+// paystub owns it from that date on). A fixture with an expiry date is a test
+// that eventually cries wolf.
+const Y = new Date().getFullYear()
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const plusDays = n => {
+  const d = new Date(); d.setDate(d.getDate() + n)
+  return d
+}
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const portal = d => `${MONTHS[d.getMonth()]}-${String(d.getDate()).padStart(2, '0')}-${d.getFullYear()}`
+// Two vests comfortably ahead but inside this calendar year, one next year,
+// one far out — so "still vesting this year" and "vest through" both have
+// something to say no matter what day the suite runs.
+const soon = plusDays(20)
+const later = plusDays(50)
+const nextYear = new Date(Y + 1, 1, 21)
+const farOut = new Date(Y + 3, 1, 21)
+// The last two are always next-year-or-later; the first two only stay inside
+// this year if there is enough of it left.
+const thisYearTotal = soon.getFullYear() === Y && later.getFullYear() === Y ? 63078.08
+  : soon.getFullYear() === Y ? 30469.92 : 0
+
 console.log('RSU card: paste his schedule')
 await page.goto(BASE + '/seed.html#income', { waitUntil: 'networkidle' })
 await page.waitForTimeout(1000)
@@ -21,10 +46,10 @@ const rsuCard = page.locator('.card', { hasText: 'RSU vesting schedule' })
 ok(await rsuCard.count() === 1, 'RSU card on the Income page')
 await rsuCard.getByRole('button', { name: 'Paste schedule' }).click()
 await rsuCard.locator('textarea').fill([
-  'Aug-15-2026  $30,469.92 USD  114 units',
-  'Nov-21-2026  $32,608.16 USD  122 units',
-  'Feb-21-2027  $33,410.00 USD  125 units',
-  'Feb-21-2029  $65,483.60 USD  245 units',
+  `${portal(soon)}  $30,469.92 USD  114 units`,
+  `${portal(later)}  $32,608.16 USD  122 units`,
+  `${portal(nextYear)}  $33,410.00 USD  125 units`,
+  `${portal(farOut)}  $65,483.60 USD  245 units`,
 ].join('\n'))
 await rsuCard.getByRole('button', { name: 'Import vests' }).click()
 await page.waitForTimeout(500)
@@ -32,24 +57,26 @@ ok(await page.getByText('Imported 4 vests').count() === 1, 'import toast')
 ok(await rsuCard.locator('tbody tr').count() === 4, '4 vest rows in the table')
 const unvestedTile = rsuCard.locator('.stat-tile', { hasText: 'Unvested value' })
 ok(/\$161,97[12]/.test(await unvestedTile.innerText()), 'unvested total sums the schedule')
-ok(/\$63,078/.test(await rsuCard.locator('.stat-tile', { hasText: 'Still vesting 2026' }).innerText()), 'this-year remainder tile')
-ok(/2026-08-15/.test(await rsuCard.locator('.stat-tile', { hasText: 'Next vest' }).innerText()), 'next vest date')
+ok(new RegExp(`\\$${thisYearTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)
+  .test(await rsuCard.locator('.stat-tile', { hasText: `Still vesting ${Y}` }).innerText()),
+  'this-year remainder tile counts only the vests still ahead this year')
+ok(new RegExp(iso(soon)).test(await rsuCard.locator('.stat-tile', { hasText: 'Next vest' }).innerText()), 'next vest date')
 
 // re-import must not duplicate
 await rsuCard.getByRole('button', { name: 'Paste schedule' }).click()
-await rsuCard.locator('textarea').fill('Aug-15-2026  $30,469.92 USD  114 units')
+await rsuCard.locator('textarea').fill(`${portal(soon)}  $30,469.92 USD  114 units`)
 await rsuCard.getByRole('button', { name: 'Import vests' }).click()
 await page.waitForTimeout(400)
 ok(await rsuCard.locator('tbody tr').count() === 4, 're-paste does not duplicate vests')
 
 // price input drives units-only vests
 await rsuCard.getByRole('button', { name: 'Paste schedule' }).click()
-await rsuCard.locator('textarea').fill('May-15-2028 100 units')
+await rsuCard.locator('textarea').fill(`May-15-${Y + 2} 100 units`)
 await rsuCard.getByRole('button', { name: 'Import vests' }).click()
 await page.waitForTimeout(300)
 await rsuCard.getByLabel('Assumed price per share ($)').fill('267.28')
 await page.waitForTimeout(300)
-const row2028 = rsuCard.locator('tbody tr', { hasText: '2028-05-15' })
+const row2028 = rsuCard.locator('tbody tr', { hasText: `${Y + 2}-05-15` })
 ok(/\$26,728/.test(await row2028.innerText()), 'units-only vest priced by assumed price')
 
 // delete (armed confirm)
@@ -66,7 +93,7 @@ await page.waitForTimeout(1200)
 const rsuCell = page.locator('.hero-stats .hs-cell', { hasText: 'Unvested RSUs' })
 ok(await rsuCell.count() === 1, 'unvested RSUs cell in the hero strip')
 const cellText = await rsuCell.innerText()
-ok(/~\$161,97[12]/.test(cellText) && /not in net worth/.test(cellText) && /vest through 2029/.test(cellText), `cell shows value + exclusion (${cellText.replace(/\n/g, ' · ')})`)
+ok(/~\$161,97[12]/.test(cellText) && /not in net worth/.test(cellText) && new RegExp(`vest through ${Y + 3}`).test(cellText), `cell shows value + exclusion (${cellText.replace(/\n/g, ' · ')})`)
 const heroBefore = await page.locator('.hero-value').innerText()
 ok(/\$329,6\d\d/.test(heroBefore.split('\n')[0]), `net worth unchanged by RSUs (${heroBefore.split('\n')[0]})`)
 await rsuCell.click()

@@ -563,7 +563,9 @@ function RsuCard({ state, dispatch, toast }) {
             {vests.map(v => (
               <tr key={v.id} style={v.date <= today ? { opacity: 0.55 } : undefined}>
                 <td>{v.date}</td>
-                <td className="num">{v.units ? Math.round(v.units).toLocaleString() : '—'}</td>
+                {/* truthy-but-unparseable ("x" from a bad paste) rendered as
+                    "NaN" — require an actual number. */}
+                <td className="num">{Number(v.units) > 0 ? Math.round(v.units).toLocaleString() : '—'}</td>
                 <td className="num">
                   {fmt(vestValue(v, price, basis))}
                   {vestBasisDiffers(v, price) && (
