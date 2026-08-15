@@ -697,6 +697,18 @@ textarea:focus-visible {
   transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
     box-shadow var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
 }
+/* Opt-out for buttons whose label is a whole sentence with data in it (a
+   conflict fix: "Update profile expenses ($4,600 → $3,299)"). Kept off .btn
+   generally so ordinary controls still never break mid-label. */
+.btn.wrap-label {
+  white-space: normal;
+  height: auto;
+  min-height: 34px;
+  max-width: 100%;
+  padding-block: 6px;
+  text-align: center;
+}
+
 .btn:hover {
   background: var(--surface-2);
 }
@@ -1143,12 +1155,14 @@ textarea:focus-visible {
 /* ---------- charts ---------- */
 .grid-2 {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 16px;
 }
 @media (max-width: 800px) {
   .grid-2 {
-    grid-template-columns: 1fr;
+    /* minmax(0,…) not 1fr: a bare 1fr track can't shrink below its widest
+       child's min-content, which pushed the whole page sideways at 320px. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .legend {
@@ -1181,6 +1195,7 @@ textarea:focus-visible {
 }
 .flow-month {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -1534,7 +1549,7 @@ textarea:focus-visible {
 }
 @media (max-width: 800px) {
   .grid-2-forms {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .grid-2-forms .card {

@@ -27,13 +27,22 @@ const SS_RATE = 0.062
 // taxTables rather than frozen here — a hardcoded base silently overstates
 // withholding for every high earner the moment the calendar turns.
 
+// Coerce and clamp: Math.max(0, 'abc') is NaN, and a single NaN here poisons
+// every downstream figure. A number that isn't finite means "unknown", which
+// for a withholding estimate is zero.
+const money = v => {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.max(0, n) : 0
+}
+
 export function supplementalFederal(amount, priorSupplementalYtd = 0) {
-  const before = Math.max(0, priorSupplementalYtd)
-  const after = before + Math.max(0, amount)
+  const before = money(priorSupplementalYtd)
+  const amt = money(amount)
+  const after = before + amt
   const highBefore = Math.max(0, before - SUPP_THRESHOLD)
   const highAfter = Math.max(0, after - SUPP_THRESHOLD)
   const high = highAfter - highBefore
-  const low = Math.max(0, amount - high)
+  const low = Math.max(0, amt - high)
   return { low, high, tax: low * SUPP_RATE_LOW + high * SUPP_RATE_HIGH }
 }
 
@@ -49,22 +58,29 @@ export function vestWithholding({
   const limits = limitsFor(Number(year))
   const ssWageBase = limits.ssWageBase || 184500
   const surtaxTable = limits.medicareSurtaxAt || { single: 200000, mfj: 250000, hoh: 200000 }
-  const gross = Math.max(0, Number(amount) || 0)
+  const gross = money(amount)
+  const priorSupp = money(priorSupplementalYtd)
+  const wages = money(wagesYtd)
   if (gross === 0) {
-    return { gross: 0, federal: 0, socialSecurity: 0, medicare: 0, state: 0, withheld: 0, net: 0, rates: {} }
+    // Same shape as the normal return, zeros throughout. An empty `rates`
+    // used to reach the UI as Math.round(undefined) → "NaN%".
+    return {
+      gross: 0, federal: 0, socialSecurity: 0, medicare: 0, state: 0, withheld: 0, net: 0,
+      rates: { federalPct: 0, effectivePct: 0, hitHighBracket: false },
+    }
   }
 
-  const fed = supplementalFederal(gross, priorSupplementalYtd)
+  const fed = supplementalFederal(gross, priorSupp)
 
   // Social Security stops at the wage base — for a high earner most of the
   // year's vests have no SS withheld at all, and pretending otherwise
   // understates take-home by thousands.
-  const ssRoom = Math.max(0, ssWageBase - Math.max(0, wagesYtd))
+  const ssRoom = Math.max(0, ssWageBase - wages)
   const socialSecurity = Math.min(gross, ssRoom) * SS_RATE
 
   const surtaxAt = surtaxTable[filingStatus] ?? surtaxTable.single
-  const overBefore = Math.max(0, wagesYtd - surtaxAt)
-  const overAfter = Math.max(0, wagesYtd + gross - surtaxAt)
+  const overBefore = Math.max(0, wages - surtaxAt)
+  const overAfter = Math.max(0, wages + gross - surtaxAt)
   const medicare = gross * MEDICARE + (overAfter - overBefore) * MEDICARE_SURTAX
 
   // Clamped: a mistyped rate should not produce a negative paycheck.
@@ -95,6 +111,9 @@ export function nextVestOutlook(state, summary, { today } = {}) {
   const rsu = state.rsu || {}
   const s = summary
   if (!s?.nextVest) return null
+  // A vest we can't value can't answer "what lands" — which is this card's
+  // whole purpose. Better silent than a confident "~$0 lands in 92 days".
+  if (!(Number(s.nextVest.value) > 0)) return null
 
   const profile = state.profile || {}
   const year = (today || new Date().toISOString().slice(0, 10)).slice(0, 4)

@@ -85,7 +85,10 @@ export function bracketsFor(year, filingStatus) {
 export function estimateFederalTax(grossWages, filingStatus, year = CURRENT_TAX_YEAR) {
   const L = limitsFor(year)
   const sd = L.standardDeduction[filingStatus] || L.standardDeduction.single
-  const taxable = Math.max(0, (Number(grossWages) || 0) - sd)
+  // Finite check, not `|| 0`: an Infinity slipping in here returns an
+  // Infinity tax, which then renders as "$Infinity".
+  const wages = Number(grossWages)
+  const taxable = Math.max(0, (Number.isFinite(wages) ? wages : 0) - sd)
   const brackets = bracketsFor(year, filingStatus)
   let tax = 0
   for (let i = 0; i < brackets.length; i++) {

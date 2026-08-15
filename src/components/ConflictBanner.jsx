@@ -30,7 +30,7 @@ export default function ConflictBanner({ surface }) {
         <div key={c.factId + c.message} className="row gap wrap" style={{ alignItems: 'center', padding: '6px 0' }}>
           <span className="small money" style={{ flex: 1, minWidth: 240 }}>{c.message}</span>
           {c.fix && (
-            <button className="btn small" onClick={() => applyFix(c)} title={`${c.fix.preview.from} → ${c.fix.preview.to}`}>
+            <button className="btn small wrap-label" onClick={() => applyFix(c)} title={`${c.fix.preview.from} → ${c.fix.preview.to}`}>
               {c.fix.label} ({c.fix.preview.from} → {c.fix.preview.to})
             </button>
           )}

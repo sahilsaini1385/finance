@@ -255,7 +255,9 @@ export default function Settings() {
 
       <div className="card">
         <h2>Backup &amp; restore</h2>
-        <div className="row gap">
+        {/* wrap: side by side these two buttons are 371px, which pushed a
+            390px phone into horizontal scroll. */}
+        <div className="row gap wrap">
           <button className="btn primary" onClick={exportData}>Export backup (JSON)</button>
           <button className="btn" onClick={() => fileRef.current?.click()}>Restore from backup…</button>
           <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={importData} />

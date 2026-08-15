@@ -13,7 +13,11 @@ const WIDTHS = [320, 390]
 let pass = 0, fail = 0
 const ok = (cond, name) => { cond ? (pass++, console.log(`  ✓ ${name}`)) : (fail++, console.error(`  ✗ ${name}`)) }
 
-const PAGES = ['accounts', 'transactions', 'budget', 'goals', 'insurance', 'benefits']
+// Every route, not a sample. A bug sweep found Settings scrolling sideways at
+// 390px (two backup buttons totalling 371px in a 306px row) precisely because
+// it was one of the pages this list left out.
+const PAGES = ['dashboard', 'advisor', 'accounts', 'income', 'transactions', 'budget', 'report',
+  'import', 'goals', 'retirement', 'scenarios', 'home', 'taxes', 'benefits', 'insurance', 'settings']
 
 for (const width of WIDTHS) {
   console.log(`At ${width}px wide`)
