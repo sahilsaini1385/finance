@@ -17,7 +17,7 @@ const ok = (cond, name) => { cond ? (pass++, console.log(`  ✓ ${name}`)) : (fa
 // 390px (two backup buttons totalling 371px in a 306px row) precisely because
 // it was one of the pages this list left out.
 const PAGES = ['dashboard', 'advisor', 'accounts', 'income', 'transactions', 'budget', 'report',
-  'import', 'goals', 'retirement', 'scenarios', 'home', 'taxes', 'benefits', 'insurance', 'settings']
+  'import', 'goals', 'retirement', 'scenarios', 'home', 'properties', 'taxes', 'benefits', 'insurance', 'settings']
 
 for (const width of WIDTHS) {
   console.log(`At ${width}px wide`)

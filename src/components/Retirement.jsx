@@ -130,7 +130,10 @@ export default function Retirement() {
   const medianAtRetire = mc.band.find(b => b.age === results.params.retireAge)?.p50 ?? 0
   // Works for any claim age, not just the explorer's 62/67/70 rows
   const ssMonthlyChosen = Math.round(params.ssMonthlyAt67 * claimFactor(params.ssClaimAge))
-  const checksMonthly = ssMonthlyChosen + params.pensionAnnual / 12
+  // Foreign benefits counted at full strength — each starts on its own clock
+  // in the simulation, this tile shows the picture once they've all begun.
+  const foreignMonthly = Math.round((params.foreignAnnualTotal || 0) / 12)
+  const checksMonthly = ssMonthlyChosen + params.pensionAnnual / 12 + foreignMonthly
   const gapMonthly = Math.max(0, params.spendingMonthly - checksMonthly)
 
   const numInput = (label, key, { width = 90, placeholder = '', money = false, title = '' } = {}) => (
@@ -179,7 +182,7 @@ export default function Retirement() {
           <div className="stat-sub">
             {gapMonthly > 0
               ? `portfolio must cover the other ${fmt(gapMonthly)}/mo`
-              : 'Social Security + pension cover your target spending'}
+              : `Social Security${foreignMonthly > 0 ? ', foreign benefits,' : ''} + pension cover your target spending`}
           </div>
         </div>
         <div className="stat-tile" style={{ cursor: 'default' }}>
@@ -253,6 +256,8 @@ export default function Retirement() {
         </p>
       </div>
 
+      <ForeignPensionCard r={r} set={set} params={params} />
+
       <div className="card">
         <h2><span className="icon-chip"><Icon name="info" /></span> How this is calculated</h2>
         <ul className="how-to small">
@@ -262,6 +267,112 @@ export default function Retirement() {
           <li>Taxes, Medicare/IRMAA, RMD timing, and Roth-conversion strategy are not modeled — for that depth, a dedicated planner like Boldin or a fee-only CFP is the right tool. Educational, not advice.</li>
         </ul>
       </div>
+    </div>
+  )
+}
+
+// Foreign social security and pensions — CPP, OAS, QPP, the UK State Pension.
+// Fixed benefits in a foreign currency, each with its own start age, folded
+// into every simulation on this page (and into Scenarios, which shares the
+// engine). Amounts stay in the home currency in the form; the typed exchange
+// rate is what converts them, and a stream with no rate contributes NOTHING
+// rather than counting loonies as dollars.
+const FOREIGN_PRESETS = [
+  { label: 'CPP', country: 'Canada', currency: 'CAD', startAge: 65 },
+  { label: 'OAS', country: 'Canada', currency: 'CAD', startAge: 65 },
+  { label: 'UK State Pension', country: 'UK', currency: 'GBP', startAge: 67 },
+]
+
+function ForeignPensionCard({ r, set, params }) {
+  const rows = Array.isArray(r.foreignPensions) ? r.foreignPensions : []
+  const update = (id, patch) => set({ foreignPensions: rows.map(x => (x.id === id ? { ...x, ...patch } : x)) })
+  const remove = id => set({ foreignPensions: rows.filter(x => x.id !== id) })
+  const add = preset => set({
+    foreignPensions: [...rows, {
+      id: Math.random().toString(36).slice(2, 10),
+      label: preset?.label || 'Pension',
+      country: preset?.country || '',
+      currency: preset?.currency || 'USD',
+      monthlyAmount: '',
+      fxToUsd: '',
+      startAge: String(preset?.startAge ?? 65),
+    }],
+  })
+  const norm = params.foreignPensions || []
+  const total = params.foreignAnnualTotal || 0
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="landmark" /></span> Foreign pensions &amp; social security</h2>
+      <p className="muted small">
+        Worked in another country? CPP, OAS, and similar benefits are real retirement income — enter them in
+        their own currency and they join every simulation above from their start age. Since the Windfall
+        Elimination Provision was repealed (2025), a foreign pension no longer reduces your US Social Security.
+      </p>
+
+      {rows.length > 0 && (
+        <table className="table">
+          <thead>
+            <tr><th>Benefit</th><th>Currency</th><th className="num">Amount / mo</th><th className="num">→ USD rate</th><th className="num">Starts at</th><th className="num">USD / mo</th><th></th></tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const n = norm.find(x => x.id === row.id)
+              return (
+                <tr key={row.id}>
+                  <td><input value={row.label} onChange={e => update(row.id, { label: e.target.value })} style={{ width: 110 }} aria-label="Benefit name" /></td>
+                  <td>
+                    <input value={row.currency} onChange={e => update(row.id, { currency: e.target.value.toUpperCase() })}
+                      style={{ width: 58 }} maxLength={3} aria-label="Currency" />
+                  </td>
+                  <td className="num">
+                    <input type="number" inputMode="decimal" value={row.monthlyAmount}
+                      onChange={e => update(row.id, { monthlyAmount: e.target.value })} style={{ width: 90 }} aria-label={`${row.label} monthly amount`} />
+                  </td>
+                  <td className="num">
+                    {String(row.currency).toUpperCase() === 'USD' ? <span className="muted">—</span> : (
+                      <input type="number" inputMode="decimal" step="0.01" value={row.fxToUsd}
+                        onChange={e => update(row.id, { fxToUsd: e.target.value })} style={{ width: 70 }}
+                        placeholder="0.73" aria-label={`${row.currency} to USD rate`} />
+                    )}
+                  </td>
+                  <td className="num">
+                    <input type="number" inputMode="numeric" value={row.startAge}
+                      onChange={e => update(row.id, { startAge: e.target.value })} style={{ width: 56 }} aria-label={`${row.label} start age`} />
+                  </td>
+                  <td className="num money">
+                    {n ? (n.missingFx ? <span style={{ color: 'var(--warning-text)' }}>needs rate</span> : fmt(Math.round(n.usdMonthly))) : '—'}
+                  </td>
+                  <td className="row-actions" style={{ opacity: 1 }}>
+                    <button className="btn ghost small" onClick={() => remove(row.id)} aria-label={`Remove ${row.label}`}><Icon name="x" size={13} /></button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      <div className="row gap wrap" style={{ marginTop: rows.length ? 8 : 0 }}>
+        {FOREIGN_PRESETS.map(pr => (
+          <button key={pr.label} className="chip" onClick={() => add(pr)}>+ {pr.label} ({pr.country})</button>
+        ))}
+        <button className="chip" onClick={() => add(null)}>+ Other</button>
+      </div>
+
+      {total > 0 && (
+        <p className="small money" style={{ marginTop: 10, marginBottom: 0 }}>
+          Counted in the plan: <strong>{fmt(Math.round(total / 12))}/mo</strong> ({fmt(Math.round(total))}/yr) once all benefits have started,
+          each from its own start age.
+        </p>
+      )}
+      <p className="muted small" style={{ marginBottom: 0, marginTop: total > 0 ? 4 : 10 }}>
+        The exchange rate is yours to set (and revisit) — this app makes no network calls, and today's rate is only an
+        estimate of the rate decades from now. Your real CPP/OAS figures are on{' '}
+        <a href="https://www.canada.ca/en/services/benefits/publicpensions.html" target="_blank" rel="noreferrer">canada.ca</a>{' '}
+        under My Service Canada Account. Foreign benefit taxation follows the US–Canada tax treaty — worth a cross-border
+        accountant's hour before you claim.
+      </p>
     </div>
   )
 }

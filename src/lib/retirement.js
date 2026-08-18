@@ -45,6 +45,42 @@ export function claimFactor(age) {
   return CLAIM_FACTORS[Math.min(70, Math.max(62, Math.round(num(age) || 67)))] ?? 1.0
 }
 
+// ---------- Foreign pensions / social security ----------
+// CPP, OAS, UK State Pension, and friends: fixed monthly benefits in a
+// foreign currency, each with its own start age. Since the Windfall
+// Elimination Provision was repealed (Social Security Fairness Act, Jan
+// 2025), a foreign pension no longer reduces the US benefit — the streams
+// simply add. Converted with a user-typed exchange rate: this app makes no
+// network calls on its own, and pretending to know next decade's CAD/USD
+// would be false precision anyway. Rate 0/blank → the stream contributes
+// nothing rather than silently counting foreign units as dollars.
+export function normalizeForeignPensions(list) {
+  return (Array.isArray(list) ? list : [])
+    .map(f => {
+      const monthly = num(f.monthlyAmount)
+      const fx = num(f.fxToUsd)
+      const currency = (f.currency || 'USD').toUpperCase()
+      const usdMonthly = currency === 'USD' ? monthly : monthly * fx
+      return {
+        id: f.id,
+        label: f.label || 'Foreign pension',
+        country: f.country || '',
+        currency,
+        monthlyAmount: monthly,
+        fxToUsd: currency === 'USD' ? 1 : fx,
+        startAge: Math.round(num(f.startAge)) || 65,
+        usdMonthly: Math.max(0, usdMonthly),
+        usdAnnual: Math.max(0, usdMonthly) * 12,
+        missingFx: currency !== 'USD' && !(fx > 0),
+      }
+    })
+    .filter(f => f.monthlyAmount > 0)
+}
+
+export function foreignAnnualAt(pensions, age) {
+  return pensions.reduce((s, f) => s + (age >= f.startAge ? f.usdAnnual : 0), 0)
+}
+
 // ---------- Inputs ----------
 // Assemble plan parameters from app state (profile + accounts + retirement
 // settings), filling gaps with sensible defaults.
@@ -80,6 +116,8 @@ export function retirementParams(state, investmentsTotal) {
 
   const spendingMonthly = num(r.spendingMonthly) || Math.round(monthlyExpenses * RETIREMENT_DEFAULTS.spendingPct)
 
+  const foreignPensions = normalizeForeignPensions(r.foreignPensions)
+
   const ssSelf = num(r.ssMonthlyOverride) || estimateSSMonthly(income)
   const spouseIncome = num(p.spouseIncome)
   const ssSpouse = num(r.spouseSsMonthlyOverride) || (spouseIncome > 0 ? estimateSSMonthly(spouseIncome) : 0)
@@ -104,6 +142,8 @@ export function retirementParams(state, investmentsTotal) {
     ssSpouse,
     ssEstimated: !num(r.ssMonthlyOverride),
     pensionAnnual: num(r.pensionMonthly) * 12,
+    foreignPensions,
+    foreignAnnualTotal: foreignPensions.reduce((s, f) => s + f.usdAnnual, 0),
     returnPre: (num(r.expectedReturn) || RETIREMENT_DEFAULTS.expectedReturn) / 100,
     returnPost: (num(r.retiredReturn) || RETIREMENT_DEFAULTS.retiredReturn) / 100,
     volatility: (num(r.volatility) || RETIREMENT_DEFAULTS.volatility) / 100,
@@ -130,7 +170,10 @@ export function projectPath(params, returnFor, claimAge = params.ssClaimAge) {
     if (a <= params.retireAge) {
       bal += contribAt(a)
     } else {
-      let need = params.spendingAnnual - params.pensionAnnual - (a >= claimAge ? ssAnnual : 0)
+      // Each income stream starts on its own clock: US SS at the chosen claim
+      // age, each foreign pension (CPP, OAS, …) at its own start age.
+      const foreign = foreignAnnualAt(params.foreignPensions || [], a)
+      let need = params.spendingAnnual - params.pensionAnnual - foreign - (a >= claimAge ? ssAnnual : 0)
       if (need > 0) bal -= need
     }
     if (bal <= 0 && a > params.retireAge) {
