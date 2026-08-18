@@ -76,14 +76,26 @@ export function computeTotals(state) {
   const home = state.home || {}
   const homeValue = num(home.currentValue)
   const homeEquity = homeValue > 0 ? homeValue - (hasMortgageAccount ? 0 : num(home.mortgageBalance)) : 0
+  // Rental equity from the Properties tab. Value and loan are both typed on
+  // the property record (never a synced account), so there is nothing to
+  // double-count — if a rental's mortgage is also synced as an account, the
+  // user should exclude that account, and the Properties page says so.
+  let propertyValue = 0, propertyDebt = 0
+  for (const p of state.properties || []) {
+    const v = num(p.currentValue)
+    if (v > 0) { propertyValue += v; propertyDebt += num(p.mortgageBalance) }
+  }
+  const propertyEquity = Math.max(0, propertyValue - propertyDebt)
   const accountsNet = cash + investments + other - debt
   return {
     cash, investments, debt, other, excluded,
     retirementInvest,
     taxableInvest,
     homeValue, homeEquity,
+    propertyValue, propertyDebt, propertyEquity,
+    propertyCount: (state.properties || []).filter(p => num(p.currentValue) > 0).length,
     accountsNet, // the old accounts-only figure
-    netWorth: accountsNet + homeEquity,
+    netWorth: accountsNet + homeEquity + propertyEquity,
   }
 }
 

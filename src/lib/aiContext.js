@@ -15,6 +15,7 @@ import { detectRecurring, benchmarkBill } from './savings.js'
 import { retirementParams, deterministicProjection, monteCarloRetirement } from './retirement.js'
 import { localMonth } from './dates.js'
 import { oopStatus } from './health.js'
+import { propertyMetrics } from './property.js'
 import { paystubYearSummary } from './income.js'
 import { amortizationSchedule, horizonOutlook, extraPaymentScenarios } from './mortgage.js'
 import { prepayVsInvestSummary } from './prepay.js'
@@ -67,6 +68,7 @@ export function buildFinancialContext(state) {
       investmentsTaxable: r0(totals.taxableInvest),
       investmentsRetirement: r0(totals.retirementInvest),
       homeEquity: r0(totals.homeEquity),
+      ...(totals.propertyEquity > 0 ? { rentalPropertyEquity: r0(totals.propertyEquity) } : {}),
       debt: r0(totals.debt),
       ...(totals.excluded !== 0 ? { excludedUnvested: r0(totals.excluded) } : {}),
       history90d: (state.history || []).slice(-45).filter((_, i) => i % 5 === 0).map(h => [h.date, r0(h.netWorth)]),
@@ -168,6 +170,19 @@ export function buildFinancialContext(state) {
         status: p.status,
       }
     }),
+    // Rental real estate: metrics, not raw records — the advisor needs cash
+    // flow and equity, not the insurance bill.
+    properties: (state.properties || []).length > 0 ? (state.properties || []).map(pr => {
+      const m = propertyMetrics(pr)
+      return {
+        nickname: pr.nickname,
+        value: r0(m.value), mortgageBalance: r0(m.balance), equity: r0(m.equity),
+        rentMonthly: r0(m.rentAnnual / 12),
+        cashFlowMonthly: r0(m.cashFlowMonthly),
+        capRatePct: m.capRate !== null ? Math.round(m.capRate * 10) / 10 : null,
+        countedInNetWorth: true,
+      }
+    }) : undefined,
     home: (() => {
       const h = state.home || {}
       // Mortgage figures alone are enough for payoff context — don't require
@@ -223,6 +238,14 @@ export function buildFinancialContext(state) {
       chanceOfSuccess: Math.round(mc.successRate * 100),
       medianAtRetirement: r0(mc.band.find(b => b.age === params.retireAge)?.p50 ?? 0),
       fundsLastUntil: det.depletedAt || `${params.lifeExpectancy}+`,
+      ...(params.foreignPensions.length > 0 ? {
+        foreignPensions: params.foreignPensions.map(f => ({
+          label: f.label, country: f.country, currency: f.currency,
+          monthlyInCurrency: r0(f.monthlyAmount), usdMonthly: r0(f.usdMonthly), startAge: f.startAge,
+          ...(f.missingFx ? { note: 'no exchange rate set — contributing $0 until one is entered' } : {}),
+        })),
+        foreignPensionNote: 'Foreign benefits are included in the simulations from their start ages. WEP was repealed in 2025, so they no longer reduce US Social Security.',
+      } : {}),
     }
   }
   const fi = projectFI(state, totals.investments)

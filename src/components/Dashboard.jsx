@@ -223,6 +223,15 @@ export default function Dashboard({ onNavigate }) {
               {cell('Investments', taxableInvest, `${bucketCount('investments')}${totals.excluded !== 0 ? ` · ${fmt(Math.abs(totals.excluded))} not counted` : ''}`, openBuckets, cfg('Investments'))}
               {totals.retirementInvest !== 0 && cell('Retirement', retireInvest, bucketCount('retirement'), openBuckets, cfg('Retirement'))}
               {totals.homeEquity !== 0 && cell('Home equity', homeEquity, 'included in net worth')}
+              {totals.propertyEquity > 0 && (
+                <div className="hs-cell" role="button" tabIndex={0} aria-label="Rental equity — open Properties"
+                  onClick={() => onNavigate('properties')}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('properties') } }}>
+                  <div className="stat-label">Rental equity</div>
+                  <div className="stat-value sm money">{fmt(Math.round(totals.propertyEquity))}</div>
+                  <div className="stat-sub">{totals.propertyCount} propert{totals.propertyCount === 1 ? 'y' : 'ies'} · in net worth</div>
+                </div>
+              )}
               {rsu.totalUnvestedValue > 0 && (
                 <div className="hs-cell" role="button" tabIndex={0} aria-label="Unvested RSUs — open Income"
                   onClick={() => onNavigate('income')}

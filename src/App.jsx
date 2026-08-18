@@ -10,6 +10,7 @@ import Settings from './components/Settings.jsx'
 import Budget from './components/Budget.jsx'
 import TaxDocs from './components/TaxDocs.jsx'
 import Home from './components/Home.jsx'
+import Properties from './components/Properties.jsx'
 import Goals from './components/Goals.jsx'
 import Retirement from './components/Retirement.jsx'
 import Scenarios from './components/Scenarios.jsx'
@@ -37,6 +38,7 @@ const NAV = [
     { id: 'retirement', label: 'Retirement', icon: 'trending-up' },
     { id: 'scenarios', label: 'Scenarios', icon: 'lightbulb' },
     { id: 'home', label: 'Home', icon: 'home' },
+    { id: 'properties', label: 'Properties', icon: 'building' },
     { id: 'taxes', label: 'Taxes', icon: 'file-text' },
     { id: 'benefits', label: 'Benefits', icon: 'gift' },
     { id: 'insurance', label: 'Insurance', icon: 'shield' },
@@ -130,6 +132,7 @@ export default function App() {
           {tab === 'budget' && <Budget />}
           {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}
           {tab === 'home' && <Home />}
+          {tab === 'properties' && <Properties />}
           {tab === 'taxes' && <TaxDocs />}
           {tab === 'goals' && <Goals />}
           {tab === 'retirement' && <Retirement />}

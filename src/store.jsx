@@ -59,7 +59,16 @@ export const initialState = {
     expectedReturn: '',
     retiredReturn: '',
     volatility: '',
+    // Fixed benefits in a foreign currency — CPP, OAS, UK State Pension.
+    // {id, label, country, currency, monthlyAmount, fxToUsd, startAge}
+    foreignPensions: [],
   },
+  // Investment / rental properties — value and loan typed here, never synced
+  // account balances, so equity can't double-count. {id, nickname, address?,
+  // purchasePrice, currentValue, mortgageBalance, monthlyPayment, monthlyRent,
+  // vacancyPct, propertyTaxAnnual, insuranceAnnual, hoaMonthly,
+  // maintenancePct, managementPct, otherCostsAnnual, note}
+  properties: [],
   rsu: {             // unvested equity — future income, never an asset
     symbol: '',      // ticker, e.g. "AMZN"
     price: '',       // price you typed; always beats a fetched quote
@@ -227,6 +236,12 @@ function reducer(state, action) {
         transactions: state.transactions.map(t => (matcher(t.description) === match ? { ...t, category } : t)),
       }
     }
+    case 'ADD_PROPERTY':
+      return { ...state, properties: [...(state.properties || []), action.payload] }
+    case 'UPDATE_PROPERTY':
+      return { ...state, properties: (state.properties || []).map(p => (p.id === action.payload.id ? { ...p, ...action.payload } : p)) }
+    case 'DELETE_PROPERTY':
+      return { ...state, properties: (state.properties || []).filter(p => p.id !== action.payload) }
     case 'ADD_GOAL':
       return { ...state, goals: [...state.goals, action.payload] }
     case 'UPDATE_GOAL':
