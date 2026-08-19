@@ -111,6 +111,26 @@ ok(/per remaining paycheck/.test(laneText), 'converts the room into an action')
 ok(/no match on file/.test(laneText), 'an unknown employer match is shown as unknown, not as zero-and-fine')
 ok(/your plan allows this lane/.test(laneText), 'after-tax dollars on the paystub prove the plan supports it')
 
+console.log('Income percentile: city, state, country')
+const pctCard = page.locator('.card', { hasText: 'Where your income lands' })
+ok(await pctCard.count() === 1, 'percentile card present')
+const pctText = await pctCard.innerText()
+ok(/Seattle/i.test(pctText) && /Washington/i.test(pctText) && /United States/i.test(pctText),
+  'all three geographies for a WA profile')
+ok(/Top \d+(\.\d+)?%/.test(pctText), 'a top-N% figure leads')
+{
+  // Local-first ordering, and higher-income geographies must rank you lower.
+  const tops = [...pctText.matchAll(/Top (\d+(?:\.\d+)?)%/g)].map(m => Number(m[1]))
+  ok(tops.length === 3 && tops[0] > tops[1] && tops[1] > tops[2],
+    `Seattle ranks lower than WA than US (${tops.join('% > ')}%)`)
+}
+ok(/× the .*median household/.test(pctText), 'each tile anchors to the median')
+ok(/ACS|Census/.test(pctText), 'the source and vintage are on the card')
+ok(/household income/.test(pctText) && /households vs households/.test(pctText),
+  'compares household-to-household and says so')
+ok(/add spouse income/i.test(pctText), 'with no spouse income on file, the card asks for it')
+ok(/estimate/.test(pctText) && /range, not a ranking/.test(pctText), 'the tail is disclosed as an estimate')
+
 console.log('Valuation basis: a price only matters once you say it does')
 const rsuCard = page.locator('.card', { hasText: 'RSU vesting schedule' })
 const before = await rsuCard.locator('.stat-tile', { hasText: 'Unvested value' }).innerText()
