@@ -5,14 +5,16 @@ import { localToday, localMonth } from './dates.js'
 import { txParts } from './tx.js'
 import { oopStatus } from './health.js'
 import { paystubYearSummary } from './income.js'
-import { LIMITS_BY_YEAR, TAX_TABLES_BY_YEAR, CURRENT_TAX_YEAR, limitsFor, estimateFederalTax } from './taxTables.js'
+import { CURRENT_TAX_YEAR, limitsFor, estimateFederalTax } from './taxTables.js'
 import { resolveFacts, policyPremiumAnnual, policyCoverage, toleranceFor } from './facts.js'
 import { buildTaxSummary } from './report.js'
+import { num } from './num.js'
 
 // Back-compat re-exports — tables now live year-keyed in taxTables.js.
-export const LIMITS_2026 = LIMITS_BY_YEAR[2026]
-export const TAX_BRACKETS_2026 = TAX_TABLES_BY_YEAR[2026]
-export { estimateFederalTax, LIMITS_BY_YEAR, TAX_TABLES_BY_YEAR, limitsFor }
+// Named for what they are, not a year that silently goes stale. The `.year`
+// field says which table actually applies.
+export const CURRENT_LIMITS = limitsFor(CURRENT_TAX_YEAR)
+export { estimateFederalTax, limitsFor }
 
 // Aggregates key figures across W-2 documents for the most recent tax year that has them.
 export function w2Summary(state) {
@@ -31,10 +33,6 @@ export function w2Summary(state) {
   }
 }
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 // Comprehensive net worth: accounts (minus any the user excludes — e.g.
 // unvested RSUs, which are future income, not an asset yet) plus home equity
@@ -111,7 +109,7 @@ function coverageOf(state, kind) {
 export function getRecommendations(state) {
   const recs = []
   const p = state.profile
-  const L = LIMITS_2026
+  const L = CURRENT_LIMITS
   const totals = computeTotals(state)
   const age = num(p.age)
   // Reconciled facts: one income, one expenses, one debt figure everywhere —

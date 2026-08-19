@@ -19,11 +19,8 @@ import { retirementParams, deterministicProjection, monteCarloRetirement, RETIRE
 import { FI_ASSUMPTIONS } from './projection.js'
 import { estimateFederalTax } from './taxTables.js'
 import { amortizationSchedule } from './mortgage.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 // Deterministic RNG (mulberry32) so baseline and scenario runs never jitter
 // against each other between renders — a lever at zero shows a zero delta.

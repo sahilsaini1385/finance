@@ -23,11 +23,9 @@ import { rsuScheduledAfter } from './rsu.js'
 import { limitsFor, estimateFederalTax, marginalRate } from './taxTables.js'
 import { supplementalFederal } from './vestTax.js'
 
+import { num } from './num.js'
+
 const SUPP_RATE = 0.22
-const num = v => {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
 const r0 = n => Math.round(n)
 
 // Shared spine: the projected-income and projected-deferral figures both

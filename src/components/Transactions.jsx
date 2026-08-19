@@ -10,6 +10,7 @@ import {
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import { useAutoCategorize, mergeCount, merchantLabel, isExcludedCategory } from './useAutoCategorize.js'
+import { num } from '../lib/num.js'
 
 const LIMIT_STEP = 150
 
@@ -169,7 +170,6 @@ function SplitEditor({ t, cats }) {
   const toast = useToast()
   const abs = Math.abs(t.amount)
   const sign = t.amount < 0 ? -1 : 1
-  const num = v => parseFloat(String(v).replace(/,/g, '')) || 0
   const [rows, setRows] = useState(() =>
     (t.splits || []).length
       ? t.splits.map(s => ({ key: uid(), category: s.category, amt: String(Math.abs(s.amount)) }))

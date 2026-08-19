@@ -1,11 +1,8 @@
 // Mortgage amortization + payoff math. Pure functions.
 
 import { localMonth } from './dates.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 // Full month-by-month schedule at annualRatePct with a fixed monthly P&I
 // payment (+extra). The single source of truth every other payoff figure

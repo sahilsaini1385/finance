@@ -10,11 +10,8 @@
 
 import { txParts } from './tx.js'
 import { localToday } from './dates.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isFinite(n) ? n : 0
-}
 
 // First day of the plan year containing `todayStr` (YYYY-MM-DD).
 export function planYearStart(policy, todayStr = localToday()) {

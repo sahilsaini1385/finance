@@ -5,7 +5,7 @@
 // this is the ONLY data that ever leaves the device, and only when the user
 // asks the AI a question.
 
-import { computeTotals, getRecommendations, estimateFederalTax, TAX_BRACKETS_2026, LIMITS_2026 } from './advisor.js'
+import { computeTotals, getRecommendations, estimateFederalTax, CURRENT_LIMITS } from './advisor.js'
 import { resolveFacts } from './facts.js'
 import { marginalRate } from './taxTables.js'
 import { buildTaxSummary } from './report.js'
@@ -266,18 +266,18 @@ export function buildFinancialContext(state) {
     const usePayrollTax = facts.withholding && spouse === 0
     const taxableBase = usePayrollTax ? facts.withholding.taxableAnnual : estimateFederalTax(gross, filing).taxable
     const estTax = usePayrollTax ? facts.withholding.estAnnualTax : estimateFederalTax(gross, filing).tax
-    const marginal = marginalRate(taxableBase, filing, LIMITS_2026.year)
+    const marginal = marginalRate(taxableBase, filing, CURRENT_LIMITS.year)
 
-    const ts = buildTaxSummary(state, new Date().getFullYear(), LIMITS_2026)
+    const ts = buildTaxSummary(state, new Date().getFullYear(), CURRENT_LIMITS)
     const payrollK401 = facts.k401Deferrals?.source?.origin === 'payroll'
     const hsaElig = facts.hsaStatus?.eligibility
     const hsaLimit =
-      hsaElig === 'family' ? LIMITS_2026.hsaFamily
-      : hsaElig === 'self' ? LIMITS_2026.hsaSelf
+      hsaElig === 'family' ? CURRENT_LIMITS.hsaFamily
+      : hsaElig === 'self' ? CURRENT_LIMITS.hsaSelf
       : hsaElig === 'no' ? 0 : null // null = unknown eligibility, don't assume
 
     ctx.tax = {
-      year: LIMITS_2026.year,
+      year: CURRENT_LIMITS.year,
       state: state.profile?.state || null,
       filingStatus: filing,
       dependents: state.profile?.dependents || '0',
@@ -290,14 +290,14 @@ export function buildFinancialContext(state) {
         // when statements exist (the raw profile % stays in ctx.profile).
         ...(payrollK401
           ? { k401Ytd: r0(facts.k401Deferrals.value), k401PaceAnnual: r0(facts.k401Deferrals.pace), k401Source: 'payroll-verified' }
-          : { k401Planned: r0(Math.min((facts.k401Deferrals?.value || 0), LIMITS_2026.k401)), k401Source: 'modeled from profile %' }),
-        k401Limit: LIMITS_2026.k401,
+          : { k401Planned: r0(Math.min((facts.k401Deferrals?.value || 0), CURRENT_LIMITS.k401)), k401Source: 'modeled from profile %' }),
+        k401Limit: CURRENT_LIMITS.k401,
         k401AfterTaxYtd: facts.k401AfterTax ? r0(facts.k401AfterTax.value) : undefined,
         hsaPlanned: r0(facts.hsaStatus?.contribution?.value ?? state.profile?.hsaContribution),
         hsaEligibility: hsaElig,
         hsaLimit,
         iraPlanned: r0(state.profile?.iraContribution),
-        iraLimit: LIMITS_2026.ira,
+        iraLimit: CURRENT_LIMITS.ira,
       },
       deductibleSpendingSeenThisYear: {
         charitableGiving: r0(ts.deductions.giving),

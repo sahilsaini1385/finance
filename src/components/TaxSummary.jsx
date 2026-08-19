@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react'
 import { useStore, fmt } from '../store.jsx'
 import { buildTaxSummary, taxSummaryCSV } from '../lib/report.js'
-import { LIMITS_2026 } from '../lib/advisor.js'
+import { limitsFor } from '../lib/taxTables.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 
@@ -9,7 +9,7 @@ export default function TaxSummary({ year }) {
   const { state } = useStore()
   const toast = useToast()
   const s = useMemo(
-    () => buildTaxSummary(state, year, LIMITS_2026),
+    () => buildTaxSummary(state, year, limitsFor(year)) // the summary's own year, not whatever year is current,
     [state.transactions, state.documents, state.home, state.profile, year],
   )
 

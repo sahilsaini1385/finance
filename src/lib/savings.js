@@ -2,11 +2,8 @@
 // history. Pure functions, no I/O; runs entirely in the browser.
 
 import { localToday } from './dates.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isNaN(n) ? 0 : n
-}
 
 // Normalize a raw bank descriptor to a stable merchant key:
 // "SQ *BLUE BOTTLE 0042 OAKLAND CA" and "SQ *BLUE BOTTLE 0087 SF CA" → "BLUE BOTTLE"

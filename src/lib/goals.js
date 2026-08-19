@@ -14,11 +14,8 @@
 import { localToday } from './dates.js'
 import { payrollInflowOutlook } from './yearOutlook.js'
 import { resolveFacts } from './facts.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isNaN(n) ? 0 : n
-}
 
 function shiftMonth(month, delta) {
   const [y, m] = month.split('-').map(Number)

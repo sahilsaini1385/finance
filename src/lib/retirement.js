@@ -3,11 +3,8 @@
 // is comparable to the user's current budget. Educational, not advice.
 
 import { resolveFacts } from './facts.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 export const RETIREMENT_DEFAULTS = {
   retireAge: 65,
@@ -59,11 +56,11 @@ export function normalizeForeignPensions(list) {
     .map(f => {
       const monthly = num(f.monthlyAmount)
       const fx = num(f.fxToUsd)
-      const currency = (f.currency || 'USD').toUpperCase()
+      const currency = String(f.currency || 'USD').toUpperCase()
       const usdMonthly = currency === 'USD' ? monthly : monthly * fx
       return {
         id: f.id,
-        label: f.label || 'Foreign pension',
+        label: String(f.label || 'Foreign pension'),
         country: f.country || '',
         currency,
         monthlyAmount: monthly,
