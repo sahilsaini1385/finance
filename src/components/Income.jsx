@@ -4,6 +4,7 @@ import { parsePaystub, paystubYearSummary, K401_TRAD_RE, K401_AFTER_RE, K401_ROT
 import { parseVestSchedule, rsuSummary, vestValue, vestBasisDiffers, effectivePrice } from '../lib/rsu.js'
 import { nextVestOutlook } from '../lib/vestTax.js'
 import { taxOutlook, megaBackdoorOutlook } from '../lib/yearOutlook.js'
+import { incomePercentile, geographiesFor } from '../lib/percentile.js'
 import { fetchQuote, quoteStatus, quoteAge, QUOTE_SOURCES, QUOTE_TTL_MS, validSymbol } from '../lib/quotes.js'
 import { resolveFacts, getDataConflicts } from '../lib/facts.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
@@ -201,6 +202,52 @@ function NextVestCard({ state }) {
         A withholding estimate, not a tax bill — companies withhold equity at a flat supplemental rate, so if
         your marginal rate is higher you may still owe the difference in April. State withholding is not
         included{state.profile?.state ? ` (${state.profile.state} rate not set)` : ''}.
+      </p>
+    </div>
+  )
+}
+
+// Where the household's income sits in the distribution — city, state,
+// country. Baked-in Census tables (no network), compared household-to-
+// household: survey medians count households, so comparing one earner's pay
+// against them would flatter everyone with a working spouse.
+function IncomePercentileCard({ state, facts }) {
+  const profile = state.profile || {}
+  const myIncome = facts.grossIncome?.value || 0
+  const spouse = Number(profile.spouseIncome) || 0
+  const household = myIncome + spouse
+  if (!(household > 0)) return null
+
+  const geos = geographiesFor(profile.state)
+  const rows = geos.map(g => incomePercentile(household, g.id)).filter(Boolean)
+  if (rows.length === 0) return null
+  const noStateTable = !rows.some(r => r.kind === 'state' || r.kind === 'city')
+
+  return (
+    <div className="card">
+      <h2><span className="icon-chip"><Icon name="bar-chart" /></span> Where your income lands</h2>
+      <div className="stat-row">
+        {rows.map(r => (
+          <div className="stat-tile" style={{ cursor: 'default' }} key={r.label}>
+            <div className="stat-label">{r.label}</div>
+            <div className="stat-value money">
+              {r.topPct <= 10 ? `Top ${r.topPct}%` : `${Math.round(r.percentile)}th percentile`}
+            </div>
+            <div className="stat-sub">{r.multiple}× the {fmt(r.median)} median household · {r.source}</div>
+          </div>
+        ))}
+      </div>
+      <p className="small muted money" style={{ marginBottom: 0 }}>
+        Based on {fmt(Math.round(household))} of household income
+        {myIncome > 0 && spouse > 0
+          ? ` (your ${fmt(Math.round(myIncome))} projection + ${fmt(Math.round(spouse))} spouse income from the Advisor profile)`
+          : myIncome > 0
+            ? ` (${facts.grossIncome?.source?.origin === 'payroll' ? 'your payroll-verified projection' : 'your profile estimate'}; add spouse income in the Advisor profile to compare the full household)`
+            : ' (spouse income only — add your income in the Advisor profile, or upload a pay statement, for the full household)'}
+        {' '}— households vs households, the way the survey counts.
+        {noStateTable && ` No table for ${(profile.state || 'your state').toUpperCase()} yet, so only the national comparison is shown.`}
+        {' '}Survey-year data; incomes drift a few percent a year, and above the top bracket the curve is an estimate —
+        treat single digits as a range, not a ranking.
       </p>
     </div>
   )
@@ -740,6 +787,7 @@ export default function Income() {
       <NextVestCard state={state} />
       <YearTaxCard state={state} year={thisYear} />
       <AfterTaxLaneCard state={state} year={thisYear} employerMatch={facts.employerMatch?.value || 0} />
+      <IncomePercentileCard state={state} facts={facts} />
       <RsuCard state={state} dispatch={dispatch} toast={toast} />
 
       {stubs.length === 0 ? (
