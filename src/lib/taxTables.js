@@ -63,7 +63,11 @@ export const TAX_TABLES_BY_YEAR = {
   },
 }
 
-export const CURRENT_TAX_YEAR = 2026
+// The calendar decides the current tax year — a hardcoded 2026 here froze
+// every "current year" limit in the app the day the calendar turned. Years
+// without a table clamp to the nearest known one (limitsFor below), so a new
+// January degrades to last year's limits instead of breaking.
+export const CURRENT_TAX_YEAR = new Date().getFullYear()
 
 // Nearest year we have tables for — an unknown year clamps to the closest
 // known one rather than silently using the current year.

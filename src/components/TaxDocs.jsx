@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt } from '../store.jsx'
-import { estimateFederalTax, w2Summary, LIMITS_2026 } from '../lib/advisor.js'
+import { estimateFederalTax, w2Summary } from '../lib/advisor.js'
+import { limitsFor } from '../lib/taxTables.js'
 import { parseW2 } from '../lib/income.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
 import { putFile, deleteFile, openFile, getFile, formatBytes } from '../lib/files.js'
@@ -168,7 +169,7 @@ export default function TaxDocs() {
                       <strong>{fmt(Math.abs(diff))}</strong>
                     </td>
                   </tr>
-                  {w2.k401 > 0 && <tr><td>401(k) deferrals (Box 12)</td><td className="num">{fmt(w2.k401)} of {fmt(LIMITS_2026.k401)} limit</td></tr>}
+                  {w2.k401 > 0 && <tr><td>401(k) deferrals (Box 12)</td><td className="num">{fmt(w2.k401)} of {fmt(limitsFor(Number(w2.year)).k401)} limit</td></tr>}
                   {w2.hsa > 0 && <tr><td>HSA via payroll (Box 12 W)</td><td className="num">{fmt(w2.hsa)}</td></tr>}
                 </tbody>
               </table>

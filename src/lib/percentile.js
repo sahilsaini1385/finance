@@ -14,13 +14,11 @@
 // and the UI must say so; it's also why results are clamped at "top 0.1%" —
 // finer precision than that would be an invention.
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 // brackets: [upper bound, cumulative % of households below it]; monotonic.
 // over200Pct: % of households above $200k.  top1: est. top-1% threshold ($).
+import { num } from './num.js'
+
 export const GEOGRAPHIES = {
   us: {
     id: 'us', label: 'United States', kind: 'country',

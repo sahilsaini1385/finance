@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import { useStore, fmt } from '../store.jsx'
-import { getRecommendations, LIMITS_2026 } from '../lib/advisor.js'
+import { getRecommendations, CURRENT_LIMITS } from '../lib/advisor.js'
 import { getSavingsInsights } from '../lib/savings.js'
 import { projectFI, FI_ASSUMPTIONS } from '../lib/projection.js'
 import { profileSuggestions } from '../lib/facts.js'
@@ -82,7 +82,7 @@ export default function Advisor() {
         <div>
           <h1>Advisor</h1>
           <p className="muted small">
-            Rules-based guidance computed locally from your data, using {LIMITS_2026.year} IRS limits.{' '}
+            Rules-based guidance computed locally from your data, using {CURRENT_LIMITS.year} IRS limits.{' '}
             <span className="badge">Educational only</span>
           </p>
         </div>
@@ -280,8 +280,8 @@ export default function Advisor() {
       </div>
 
       <p className="muted small">
-        {LIMITS_2026.year} limits used: 401(k) ${LIMITS_2026.k401.toLocaleString()} · IRA ${LIMITS_2026.ira.toLocaleString()} ·
-        HSA ${LIMITS_2026.hsaSelf.toLocaleString()}/{LIMITS_2026.hsaFamily.toLocaleString()}. Verify at irs.gov; confirm decisions with a CPA or fee-only fiduciary.
+        {CURRENT_LIMITS.year} limits used: 401(k) ${CURRENT_LIMITS.k401.toLocaleString()} · IRA ${CURRENT_LIMITS.ira.toLocaleString()} ·
+        HSA ${CURRENT_LIMITS.hsaSelf.toLocaleString()}/{CURRENT_LIMITS.hsaFamily.toLocaleString()}. Verify at irs.gov; confirm decisions with a CPA or fee-only fiduciary.
       </p>
     </div>
   )

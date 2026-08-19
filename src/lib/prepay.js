@@ -5,10 +5,8 @@
 // median with a wide range. These helpers compute both sides after tax so
 // the AI advisor (and the Home card footer) can compare in dollars.
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isNaN(n) ? 0 : n
-}
+import { num } from './num.js'
+
 const clamp01 = v => Math.max(0, Math.min(1, v))
 
 // Fraction of avoided mortgage interest that was actually deductible: only

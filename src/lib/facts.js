@@ -22,11 +22,8 @@ import {
 } from './income.js'
 import { estimateFederalTax } from './taxTables.js'
 import { rsuScheduledAfter } from './rsu.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 const r0 = n => Math.round(Number(n) || 0)
 
 // Central tolerance table — the single place to tune "how different is a

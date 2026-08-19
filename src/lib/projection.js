@@ -3,11 +3,8 @@
 // target, contributions held constant. Educational, not a plan.
 
 import { resolveFacts } from './facts.js'
+import { num } from './num.js'
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 export const FI_ASSUMPTIONS = {
   realGrowth: 0.05, // ~7% nominal minus ~2% inflation

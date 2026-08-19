@@ -4,10 +4,8 @@
 // gross-income estimate (facts.js), so taxes and the advisor see true
 // expected income instead of only what has already vested.
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
+
+import { num } from './num.js'
 
 // A price the user typed always wins over a fetched quote — a lookup is a
 // reference, never an authority.

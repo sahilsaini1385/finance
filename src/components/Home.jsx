@@ -7,14 +7,11 @@ import FileDrop from './FileDrop.jsx'
 import Icon from './Icon.jsx'
 import YearlyStackChart from './YearlyStackChart.jsx'
 import { useToast } from './Toaster.jsx'
+import { num } from '../lib/num.js'
 
 const HOME_DOC_KINDS = ['Mortgage note', 'Closing disclosure', 'Deed / title', 'Home insurance policy', 'Appraisal', 'Inspection report', 'Warranty', 'Renovation receipts', 'Other']
 const BILL_TYPES = ['Electric', 'Gas', 'Water', 'Internet', 'Trash', 'HOA', 'Sewer', 'Other']
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isNaN(n) ? 0 : n
-}
 
 function lastNMonths(n) {
   const out = []

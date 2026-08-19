@@ -13,14 +13,11 @@ import { CATEGORIES } from './categorize.js'
 import { localMonth } from './dates.js'
 import { txParts } from './tx.js'
 import { paystubMonthlyNetMedian } from './income.js'
+import { num } from './num.js'
 
 export const EXCLUDED = ['Income', 'Transfers', 'Investments']
 export const FIXED_CATS = ['Housing', 'Utilities', 'Insurance', 'Subscriptions', 'Fees']
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isNaN(n) ? 0 : n
-}
 
 export function allCategories(state) {
   const customs = (state.customCategories || []).map(c => c.name)

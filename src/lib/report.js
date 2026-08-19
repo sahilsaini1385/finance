@@ -5,6 +5,7 @@ import { normalizeMerchant, detectRecurring } from './savings.js'
 import { effectiveBudgets, EXCLUDED, incomeBasis } from './budget.js'
 import { txParts } from './tx.js'
 import { resolveFacts } from './facts.js'
+import { num } from './num.js'
 
 export function shiftMonth(month, delta) {
   const d = new Date(month + '-02')
@@ -98,10 +99,6 @@ export function reportHasData(r) {
 
 // ---------- Year in review ----------
 
-const num = v => {
-  const n = parseFloat(String(v ?? '').replace(/[$,%\s,]/g, ''))
-  return Number.isNaN(n) ? 0 : n
-}
 
 function yearMonths(year) {
   return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)

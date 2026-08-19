@@ -8,7 +8,7 @@ import { incomePercentile, geographiesFor } from '../lib/percentile.js'
 import { fetchQuote, quoteStatus, quoteAge, QUOTE_SOURCES, QUOTE_TTL_MS, validSymbol } from '../lib/quotes.js'
 import { resolveFacts, getDataConflicts } from '../lib/facts.js'
 import { extractPdfTextLayout } from '../lib/extract.js'
-import { LIMITS_2026 } from '../lib/advisor.js'
+import { limitsFor } from '../lib/taxTables.js'
 import FileDrop from './FileDrop.jsx'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
@@ -682,7 +682,9 @@ export default function Income() {
   const stubs = [...(state.paystubs || [])].sort((a, b) => (a.payDate < b.payDate ? 1 : -1))
   const summary = paystubYearSummary(state, thisYear)
   const { facts } = resolveFacts(state)
-  const k401Limit = LIMITS_2026.k401
+  // Year-keyed: a frozen 2026 constant here would silently keep last year's
+  // limit the day the calendar turns.
+  const k401Limit = limitsFor(Number(thisYear)).k401
   const k401Employee = summary ? summary.ytd.k401Trad + summary.ytd.k401Roth : 0
   // Pace: fraction of the year elapsed at the latest stub's pay date.
   const paceInfo = (() => {

@@ -3,15 +3,12 @@ import { useStore, uid, fmt } from '../store.jsx'
 import { propertyMetrics, propertiesTotal, PROPERTY_DEFAULTS } from '../lib/property.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
+import { num } from '../lib/num.js'
 
 // Investment properties. Everything here is typed, not synced: the value and
 // the loan live on the property record, which is what keeps rental equity
 // from ever double-counting a synced mortgage account.
 
-const num = v => {
-  const n = parseFloat(v)
-  return Number.isNaN(n) ? 0 : n
-}
 
 const blank = {
   nickname: '', address: '', purchasePrice: '', currentValue: '', mortgageBalance: '',
