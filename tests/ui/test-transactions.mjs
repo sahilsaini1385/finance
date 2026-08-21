@@ -82,6 +82,12 @@ const seed = () => {
   await search.fill('anker')
   await page.waitForTimeout(600)
   ok((await page.locator('.tx-list .tx-row').count()) === 1, 'searches Amazon item details')
+  // Enrichment stored `details` and made it searchable, but nothing ever
+  // rendered it — so "AMZN MKTP US*2X4B1" stayed opaque on screen while the
+  // apply toast claimed the rows "now show their items".
+  ok(/Anker USB-C cable/i.test(await page.locator('.tx-list').innerText()),
+    'Amazon item details are visible on the row, not only findable by search')
+  ok(await page.locator('.tx-list .tx-details').count() === 1, 'rendered in its own element')
   await search.fill('>1000')
   await page.waitForTimeout(600)
   ok((await page.locator('.tx-list .tx-row').count()) === 1, 'amount comparison works')
