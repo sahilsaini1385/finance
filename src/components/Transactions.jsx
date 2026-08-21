@@ -268,6 +268,10 @@ function TxRow({ t, category, expanded, onToggle, rowRef }) {
             {amount > 0 ? '+' : ''}{fmtCents(amount)}
           </span>
         </span>
+        {/* What the order actually was, from an Amazon export. Enrichment
+            wrote this field and made it searchable but never showed it, so
+            "AMAZON.COM*1X2Y3" stayed opaque on screen. */}
+        {t.details && <span className="tx-details">{t.details}</span>}
         <span className="tx-meta">
           {meta.join(' · ')}
           {staleSplit && <span className="badge warn">Split needs fixing</span>}

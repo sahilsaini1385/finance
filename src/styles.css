@@ -1786,6 +1786,18 @@ textarea:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 .tx-amt.pos { color: var(--good-text); }
+/* Amazon order items attached by enrichment. One line, ellipsised — the full
+   text is in the search haystack and the detail panel. */
+.tx-details {
+  display: block;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 1px 0 2px;
+}
+
 .tx-meta {
   display: flex;
   align-items: center;
