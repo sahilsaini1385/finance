@@ -5,6 +5,7 @@ import { useToast } from './Toaster.jsx'
 
 import { goalPace } from '../lib/goals.js'
 import { payrollInflowOutlook, PAYROLL_INFLOWS } from '../lib/yearOutlook.js'
+import { useArmedAction } from './useArmedAction.js'
 
 const blank = { name: '', target: '', targetDate: '', accountIds: [], note: '', returnPct: '', payrollInflow: '' }
 
@@ -14,7 +15,7 @@ export default function Goals() {
   const [form, setForm] = useState(blank)
   const [editingId, setEditingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [armedId, setArmedId] = useState(null)
+  const { isArmed, arm } = useArmedAction()
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const balanceOf = ids =>
@@ -43,16 +44,7 @@ export default function Goals() {
     setShowForm(false)
   }
 
-  const remove = g => {
-    if (armedId !== g.id) {
-      setArmedId(g.id)
-      setTimeout(() => setArmedId(cur => (cur === g.id ? null : cur)), 3000)
-      return
-    }
-    dispatch({ type: 'DELETE_GOAL', payload: g.id })
-    setArmedId(null)
-    toast('Goal deleted')
-  }
+  const remove = g => arm(g.id, () => { dispatch({ type: 'DELETE_GOAL', payload: g.id }); toast('Goal deleted') })
 
   return (
     <div className="page">
@@ -177,8 +169,8 @@ export default function Goals() {
                 </h2>
                 <div className="row gap">
                   <button className="btn ghost small" onClick={() => { setEditingId(g.id); setShowForm(true); setForm({ name: g.name, target: String(g.target), targetDate: g.targetDate || '', accountIds: g.accountIds || [], note: g.note || '', returnPct: g.returnPct ? String(g.returnPct) : '', payrollInflow: g.payrollInflow || '' }) }}>Edit</button>
-                  <button className={armedId === g.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(g)}>
-                    {armedId === g.id ? 'Confirm?' : 'Delete'}
+                  <button className={isArmed(g.id) ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(g)}>
+                    {isArmed(g.id) ? 'Confirm?' : 'Delete'}
                   </button>
                 </div>
               </div>

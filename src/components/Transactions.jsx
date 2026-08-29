@@ -284,7 +284,7 @@ function TxRow({ t, category, expanded, onToggle, rowRef }) {
 
 // ---------- the page ----------
 
-export default function Transactions() {
+export default function Transactions({ onNavigate }) {
   const { state } = useStore()
   const today = localToday()
 
@@ -380,6 +380,13 @@ export default function Transactions() {
             <Icon name="list" />
             <strong>No transactions yet</strong>
             <span className="small">Sync with SimpleFIN or import a bank CSV to get started.</span>
+            {/* Naming the next step without offering it made this a dead end —
+                every other empty state in the app hands you the button. */}
+            {onNavigate && (
+              <button className="btn primary" onClick={() => onNavigate('import')}>
+                <Icon name="upload" size={14} /> Add data
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -683,7 +683,7 @@ export default function Budget() {
           <tbody>{renderRows(flexCats)}</tbody>
         </table>
         <form className="row gap wrap" style={{ marginTop: 10 }} onSubmit={addCategory}>
-          <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="New category (Kids, Pets, Date night…)" style={{ width: 240 }} />
+          <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="New category (Kids, Pets, Date night…)" aria-label="New budget category name" style={{ width: 240 }} />
           <button className="btn small" type="submit" disabled={!newCat.trim()}><Icon name="plus" size={13} /> Add category</button>
         </form>
         <p className="muted small" style={{ marginBottom: 0 }}>
@@ -723,9 +723,9 @@ export default function Budget() {
           </table>
         )}
         <form className="row gap wrap" onSubmit={addSinking} style={{ marginTop: 8 }}>
-          <input value={sinkForm.name} onChange={e => setSinkForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Holiday gifts" style={{ width: 200 }} />
+          <input value={sinkForm.name} onChange={e => setSinkForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Holiday gifts" aria-label="Set-aside name" style={{ width: 200 }} />
           <span className="input-money" style={{ width: 110 }}>
-            <input type="number" inputMode="decimal" placeholder="/month" value={sinkForm.monthlyAmount} onChange={e => setSinkForm(f => ({ ...f, monthlyAmount: e.target.value }))} />
+            <input type="number" inputMode="decimal" placeholder="/month" aria-label="Set-aside amount per month" value={sinkForm.monthlyAmount} onChange={e => setSinkForm(f => ({ ...f, monthlyAmount: e.target.value }))} />
           </span>
           <button className="btn small" type="submit">Add set-aside</button>
         </form>

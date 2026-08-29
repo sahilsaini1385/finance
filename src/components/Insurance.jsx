@@ -5,6 +5,7 @@ import { policyPremiumAnnual, policyCoverage, enrollmentEvidence } from '../lib/
 import { localToday } from '../lib/dates.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
+import { useArmedAction } from './useArmedAction.js'
 
 const POLICY_TYPES = ['health', 'dental', 'vision', 'life', 'ad&d', 'accident', 'critical illness', 'disability', 'auto', 'home', 'renters', 'umbrella', 'pet', 'other']
 const FREQS = ['month', 'year']
@@ -43,7 +44,7 @@ export default function Insurance() {
   const [form, setForm] = useState(blank)
   const [editingId, setEditingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [armedId, setArmedId] = useState(null)
+  const { isArmed, arm } = useArmedAction()
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const submit = e => {
@@ -70,16 +71,7 @@ export default function Insurance() {
     setShowForm(false)
   }
 
-  const remove = p => {
-    if (armedId !== p.id) {
-      setArmedId(p.id)
-      setTimeout(() => setArmedId(cur => (cur === p.id ? null : cur)), 3000)
-      return
-    }
-    dispatch({ type: 'DELETE_INSURANCE', payload: p.id })
-    setArmedId(null)
-    toast('Policy deleted')
-  }
+  const remove = p => arm(p.id, () => { dispatch({ type: 'DELETE_INSURANCE', payload: p.id }); toast('Policy deleted') })
 
   const annualPremiums = state.insurance.reduce((s, p) => {
     const prem = parseFloat(p.premium) || 0
@@ -309,8 +301,8 @@ export default function Insurance() {
                   <td className="small">{p.renewalDate || '—'}</td>
                   <td className="row-actions">
                     <button className="btn ghost small" onClick={() => { setEditingId(p.id); setShowForm(true); const { id: _id, ...rest } = p; setForm({ ...blank, ...rest }) }}>Edit</button>
-                    <button className={armedId === p.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(p)}>
-                      {armedId === p.id ? 'Confirm?' : 'Delete'}
+                    <button className={isArmed(p.id) ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(p)}>
+                      {isArmed(p.id) ? 'Confirm?' : 'Delete'}
                     </button>
                   </td>
                 </tr>

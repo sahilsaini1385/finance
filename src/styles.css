@@ -773,6 +773,27 @@ textarea:focus-visible {
   padding: 0 10px;
   font-size: 13px;
 }
+/* A 28px control is comfortable under a mouse and a coin-toss under a
+   thumb. On touch devices every small control grows to the 44px target
+   floor; the mouse density is left alone. */
+@media (pointer: coarse) {
+  .btn.small,
+  .chip {
+    min-height: 44px;
+  }
+  .check-pill {
+    min-height: 44px;
+  }
+  .check-pill input {
+    width: 18px;
+    height: 18px;
+  }
+  summary {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+  }
+}
 .btn.link {
   border: none;
   background: none;
