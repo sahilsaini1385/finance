@@ -3,6 +3,7 @@ import { useStore, uid, fmt, fmtCents } from '../store.jsx'
 import { suggestAccountType } from '../lib/simplefin.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
+import { useArmedAction } from './useArmedAction.js'
 
 const INSTITUTIONS = ['Fidelity', 'Chase', 'Bank of America', 'Other']
 const TYPES = ['checking', 'savings', 'credit card', 'brokerage', 'retirement', 'hsa', '529', 'loan', 'mortgage', 'other']
@@ -16,7 +17,7 @@ export default function Accounts() {
   const [form, setForm] = useState(blank)
   const [editingId, setEditingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [armedId, setArmedId] = useState(null)
+  const { isArmed, arm } = useArmedAction()
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -42,16 +43,7 @@ export default function Accounts() {
     setForm({ name: a.name, institution: a.institution, type: a.type, balance: String(a.balance), excludeFromNetWorth: Boolean(a.excludeFromNetWorth) })
   }
 
-  const remove = a => {
-    if (armedId !== a.id) {
-      setArmedId(a.id)
-      setTimeout(() => setArmedId(cur => (cur === a.id ? null : cur)), 3000)
-      return
-    }
-    dispatch({ type: 'DELETE_ACCOUNT', payload: a.id })
-    setArmedId(null)
-    toast('Account deleted')
-  }
+  const remove = a => arm(a.id, () => { dispatch({ type: 'DELETE_ACCOUNT', payload: a.id }); toast('Account deleted') })
 
   // Type audit — accounts typed as cash whose names say "investment". Mistyped
   // accounts inflate Cash and understate Investments on the Overview.
@@ -195,10 +187,10 @@ export default function Accounts() {
                   <td className="row-actions">
                     <button className="btn ghost small" onClick={() => edit(a)}>Edit</button>
                     <button
-                      className={armedId === a.id ? 'btn danger small armed' : 'btn danger small'}
+                      className={isArmed(a.id) ? 'btn danger small armed' : 'btn danger small'}
                       onClick={() => remove(a)}
                     >
-                      {armedId === a.id ? 'Confirm delete?' : 'Delete'}
+                      {isArmed(a.id) ? 'Confirm delete?' : 'Delete'}
                     </button>
                   </td>
                 </tr>

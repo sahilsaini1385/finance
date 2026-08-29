@@ -4,6 +4,7 @@ import { propertyMetrics, propertiesTotal, PROPERTY_DEFAULTS } from '../lib/prop
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import { num } from '../lib/num.js'
+import { useArmedAction } from './useArmedAction.js'
 
 // Investment properties. Everything here is typed, not synced: the value and
 // the loan live on the property record, which is what keeps rental equity
@@ -25,7 +26,7 @@ export default function Properties() {
   const [form, setForm] = useState(blank)
   const [editingId, setEditingId] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [armedId, setArmedId] = useState(null)
+  const { isArmed, arm } = useArmedAction()
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const props = state.properties || []
@@ -46,16 +47,7 @@ export default function Properties() {
     setShowForm(false)
   }
 
-  const remove = p => {
-    if (armedId !== p.id) {
-      setArmedId(p.id)
-      setTimeout(() => setArmedId(cur => (cur === p.id ? null : cur)), 3000)
-      return
-    }
-    dispatch({ type: 'DELETE_PROPERTY', payload: p.id })
-    setArmedId(null)
-    toast('Property removed')
-  }
+  const remove = p => arm(p.id, () => { dispatch({ type: 'DELETE_PROPERTY', payload: p.id }); toast('Property removed') })
 
   const edit = p => {
     setEditingId(p.id)
@@ -176,8 +168,8 @@ export default function Properties() {
                 <h2 style={{ margin: 0 }}><Icon name="building" size={15} /> {p.nickname}{p.address ? <span className="muted small" style={{ fontWeight: 400 }}> · {p.address}</span> : null}</h2>
                 <div className="row gap">
                   <button className="btn ghost small" onClick={() => edit(p)}>Edit</button>
-                  <button className={armedId === p.id ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(p)}>
-                    {armedId === p.id ? 'Confirm?' : 'Delete'}
+                  <button className={isArmed(p.id) ? 'btn danger small armed' : 'btn danger small'} onClick={() => remove(p)}>
+                    {isArmed(p.id) ? 'Confirm?' : 'Delete'}
                   </button>
                 </div>
               </div>

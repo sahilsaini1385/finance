@@ -114,7 +114,7 @@ export default function ConnectSimpleFIN() {
               automatically. Only for other static hosts (e.g. GitHub Pages), deploy the free one-file proxy
               in <code>proxy/cloudflare-worker.js</code> and paste its URL here. See ARCHITECTURE.md.
             </p>
-            <input value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} placeholder="https://your-proxy.workers.dev" />
+            <input value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} aria-label="CORS proxy URL" placeholder="https://your-proxy.workers.dev" />
           </details>
           <div className="row gap" style={{ marginTop: 12 }}>
             <button className="btn primary" onClick={connect} disabled={busy || !token.trim()}>
@@ -177,7 +177,7 @@ export default function ConnectSimpleFIN() {
           <details className="advanced">
             <summary>Advanced: CORS proxy</summary>
             <div className="row gap" style={{ marginTop: 6 }}>
-              <input value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} placeholder="https://your-proxy.workers.dev" style={{ flex: 1, marginTop: 0 }} />
+              <input value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} aria-label="CORS proxy URL" placeholder="https://your-proxy.workers.dev" style={{ flex: 1, marginTop: 0 }} />
               <button className="btn" onClick={saveProxy} disabled={busy}>Save</button>
             </div>
           </details>

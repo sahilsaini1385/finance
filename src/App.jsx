@@ -128,7 +128,7 @@ export default function App() {
           {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
           {tab === 'accounts' && <Accounts />}
           {tab === 'income' && <Income />}
-          {tab === 'transactions' && <Transactions />}
+          {tab === 'transactions' && <Transactions onNavigate={setTab} />}
           {tab === 'budget' && <Budget />}
           {tab === 'import' && <ImportCSV onDone={() => setTab('transactions')} />}
           {tab === 'home' && <Home />}

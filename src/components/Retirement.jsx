@@ -6,6 +6,7 @@ import {
   estimateSSMonthly, claimFactor, RETIREMENT_DEFAULTS,
 } from '../lib/retirement.js'
 import Icon from './Icon.jsx'
+import PlanBasics from './PlanBasics.jsx'
 
 // 10th–90th percentile Monte Carlo band with the median path — the picture
 // Boldin leads with. Identity via direct labels, magnitude via position.
@@ -66,7 +67,6 @@ export default function Retirement() {
   const r = state.retirement || {}
   const p = state.profile || {}
   const set = payload => dispatch({ type: 'SET_RETIREMENT', payload })
-  const setProfile = payload => dispatch({ type: 'SET_PROFILE', payload })
 
   const params = useMemo(() => retirementParams(state, totals.investments), [state.retirement, state.profile, state.accounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -85,31 +85,11 @@ export default function Retirement() {
     return (
       <div className="page">
         <h1>Retirement</h1>
-        <div className="card">
-          <h2><span className="icon-chip"><Icon name="trending-up" /></span> Three numbers to start</h2>
-          <p className="muted small">
-            The planner projects your savings through age 95 across 1,000 simulated markets.
-            It needs {params.missing.join(', ')} — set once, shared with the Advisor.
-          </p>
-          <div className="row gap wrap">
-            <label className="inline-label">Your age
-              <input type="number" inputMode="numeric" style={{ width: 80 }} value={p.age || ''}
-                onChange={e => setProfile({ age: e.target.value })} />
-            </label>
-            <label className="inline-label">Household gross income / yr
-              <span className="input-money" style={{ width: 130 }}>
-                <input type="number" inputMode="decimal" value={p.grossIncome || ''}
-                  onChange={e => setProfile({ grossIncome: e.target.value })} />
-              </span>
-            </label>
-            <label className="inline-label">Monthly living expenses
-              <span className="input-money" style={{ width: 120 }}>
-                <input type="number" inputMode="decimal" value={p.monthlyExpenses || ''}
-                  onChange={e => setProfile({ monthlyExpenses: e.target.value })} />
-              </span>
-            </label>
-          </div>
-        </div>
+        <PlanBasics
+          title="Three numbers to start"
+          missing={params.missing}
+          blurb="The planner projects your savings through age 95 across 1,000 simulated markets."
+        />
       </div>
     )
   }

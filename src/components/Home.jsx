@@ -303,12 +303,12 @@ export default function Home() {
         <div className="card">
           <h2><span className="icon-chip"><Icon name="bar-chart" /></span> Monthly home bills</h2>
           <form className="row gap wrap" onSubmit={addBill}>
-            <input type="month" value={bill.month} onChange={e => setBill(b => ({ ...b, month: e.target.value }))} required />
-            <select value={bill.type} onChange={e => setBill(b => ({ ...b, type: e.target.value }))}>
+            <input type="month" aria-label="Bill month" value={bill.month} onChange={e => setBill(b => ({ ...b, month: e.target.value }))} required />
+            <select aria-label="Bill type" value={bill.type} onChange={e => setBill(b => ({ ...b, type: e.target.value }))}>
               {BILL_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
             <span className="input-money" style={{ width: 110 }}>
-              <input type="number" step="0.01" inputMode="decimal" placeholder="0.00" value={bill.amount} onChange={e => setBill(b => ({ ...b, amount: e.target.value }))} required />
+              <input type="number" step="0.01" inputMode="decimal" placeholder="0.00" aria-label="Bill amount" value={bill.amount} onChange={e => setBill(b => ({ ...b, amount: e.target.value }))} required />
             </span>
             <label className="btn small" style={{ cursor: 'pointer' }}>
               <Icon name="upload" size={13} /> {billFile ? billFile.name.slice(0, 14) + '…' : 'Attach'}

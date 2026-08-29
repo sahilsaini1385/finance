@@ -3,6 +3,7 @@ import { useStore, fmt } from '../store.jsx'
 import { scenarioBaseline, runScenario } from '../lib/scenario.js'
 import { formatMonths } from '../lib/mortgage.js'
 import Icon from './Icon.jsx'
+import PlanBasics from './PlanBasics.jsx'
 
 // What-if sandbox: fork the real numbers, move levers, compare side by side.
 // Scenarios can be time-boxed — phase 1 for N years, an optional "after
@@ -68,12 +69,12 @@ export default function Scenarios() {
     return (
       <div className="page">
         <div className="page-head"><div><h1>Scenarios</h1></div></div>
-        <div className="card">
-          <p className="muted small" style={{ margin: 0 }}>
-            The sandbox needs your {result.missing.join(' and ')} — fill them in on the Advisor tab
-            (the profile there can pull most of it from your data in one click).
-          </p>
-        </div>
+        <PlanBasics
+          icon="lightbulb"
+          title="Three numbers to start"
+          missing={result.missing}
+          blurb="The sandbox replays your plan under a change you're considering."
+        />
       </div>
     )
   }
