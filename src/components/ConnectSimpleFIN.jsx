@@ -96,6 +96,11 @@ export default function ConnectSimpleFIN() {
             <li>Choose <em>New App connection</em> to generate a <strong>setup token</strong>.</li>
             <li>Paste the token below — tokens are single-use.</li>
           </ol>
+          <p className="muted small">
+            Coverage is US &amp; Canadian institutions — UK banks aren’t on SimpleFIN. For a UK account,
+            create it as GBP on the Accounts tab and import its CSV here instead (Monzo, Starling, Revolut
+            and DD/MM dates are handled).
+          </p>
           <input
             className="mono"
             style={{ width: '100%' }}

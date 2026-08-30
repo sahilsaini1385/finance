@@ -251,6 +251,11 @@ function TxRow({ t, category, expanded, onToggle, rowRef }) {
     split ? `Split · ${t.splits.length}` : null,
     split && category !== 'all' ? `of ${fmtCents(Math.abs(t.amount))}` : null,
     t.note ? `✎ ${t.note}` : null,
+    // Imported from a foreign-currency account: the stored amount is USD
+    // (converted at import); show what the bank statement actually said.
+    t.currency && t.originalAmount != null
+      ? `${{ GBP: '£', EUR: '€', CAD: 'CA$' }[t.currency] || t.currency}${Math.abs(t.originalAmount).toFixed(2)} ${t.currency}`
+      : null,
   ].filter(Boolean)
 
   return (

@@ -1,15 +1,20 @@
 import React, { useState } from 'react'
 import { useStore, uid, fmt, fmtCents } from '../store.jsx'
 import { suggestAccountType } from '../lib/simplefin.js'
+import { usdBalance } from '../lib/advisor.js'
 import Icon from './Icon.jsx'
 import { useToast } from './Toaster.jsx'
 import { useArmedAction } from './useArmedAction.js'
 
-const INSTITUTIONS = ['Fidelity', 'Chase', 'Bank of America', 'Other']
+const INSTITUTIONS = ['Fidelity', 'Chase', 'Bank of America', 'Monzo', 'Starling', 'Other']
 const TYPES = ['checking', 'savings', 'credit card', 'brokerage', 'retirement', 'hsa', '529', 'loan', 'mortgage', 'other']
 const DEBT_TYPES = ['credit card', 'loan', 'mortgage']
 
-const blank = { name: '', institution: 'Fidelity', type: 'checking', balance: '', excludeFromNetWorth: false }
+const CURRENCIES = ['USD', 'GBP', 'EUR', 'CAD']
+// Symbols for showing an account's balance in its own money.
+const CUR_SYMBOL = { USD: '$', GBP: '£', EUR: '€', CAD: 'CA$' }
+
+const blank = { name: '', institution: 'Fidelity', type: 'checking', balance: '', currency: 'USD', fxToUsd: '', excludeFromNetWorth: false }
 
 export default function Accounts() {
   const { state, dispatch } = useStore()
@@ -25,6 +30,7 @@ export default function Accounts() {
     e.preventDefault()
     if (!form.name.trim()) return
     const payload = { ...form, balance: parseFloat(form.balance) || 0, excludeFromNetWorth: Boolean(form.excludeFromNetWorth), updated: new Date().toISOString().slice(0, 10) }
+    if (payload.currency === 'USD') payload.fxToUsd = ''
     if (editingId) {
       dispatch({ type: 'UPDATE_ACCOUNT', payload: { ...payload, id: editingId } })
       setEditingId(null)
@@ -40,7 +46,7 @@ export default function Accounts() {
   const edit = a => {
     setEditingId(a.id)
     setShowForm(true)
-    setForm({ name: a.name, institution: a.institution, type: a.type, balance: String(a.balance), excludeFromNetWorth: Boolean(a.excludeFromNetWorth) })
+    setForm({ name: a.name, institution: a.institution, type: a.type, balance: String(a.balance), currency: a.currency || 'USD', fxToUsd: a.fxToUsd != null ? String(a.fxToUsd) : '', excludeFromNetWorth: Boolean(a.excludeFromNetWorth) })
   }
 
   const remove = a => arm(a.id, () => { dispatch({ type: 'DELETE_ACCOUNT', payload: a.id }); toast('Account deleted') })
@@ -58,9 +64,17 @@ export default function Accounts() {
   const dismissSuggestion = s =>
     dispatch({ type: 'UPDATE_ACCOUNT', payload: { id: s.account.id, typeSuggestionDismissed: true } })
 
-  const totalAssets = state.accounts.filter(a => !DEBT_TYPES.includes(a.type)).reduce((s, a) => s + (parseFloat(a.balance) || 0), 0)
-  const totalDebt = state.accounts.filter(a => DEBT_TYPES.includes(a.type)).reduce((s, a) => s + Math.abs(parseFloat(a.balance) || 0), 0)
-  const byInstitution = INSTITUTIONS.map(inst => [inst, state.accounts.filter(a => a.institution === inst)])
+  const totalAssets = state.accounts.filter(a => !DEBT_TYPES.includes(a.type)).reduce((s, a) => s + usdBalance(a).usd, 0)
+  const totalDebt = state.accounts.filter(a => DEBT_TYPES.includes(a.type)).reduce((s, a) => s + Math.abs(usdBalance(a).usd), 0)
+  // Group by the institutions that actually exist in the data — grouping by
+  // the hardcoded dropdown list made any other institution (a synced "Chase
+  // Bank", a UK "Starling") vanish from this page while still counting in
+  // net worth. Known names keep their order; the rest follow alphabetically.
+  const instNames = [...new Set(state.accounts.map(a => a.institution || 'Other'))].sort((x, y) => {
+    const xi = INSTITUTIONS.indexOf(x); const yi = INSTITUTIONS.indexOf(y)
+    return (xi === -1 ? 99 : xi) - (yi === -1 ? 99 : yi) || x.localeCompare(y)
+  })
+  const byInstitution = instNames.map(inst => [inst, state.accounts.filter(a => (a.institution || 'Other') === inst)])
 
   return (
     <div className="page">
@@ -137,6 +151,20 @@ export default function Accounts() {
               <input type="number" step="0.01" inputMode="decimal" value={form.balance} onChange={e => set('balance', e.target.value)} placeholder="0.00" />
             </span>
           </label>
+          <label>Currency
+            <select value={form.currency} onChange={e => set('currency', e.target.value)}>
+              {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </label>
+          {form.currency !== 'USD' && (
+            <label>→ USD rate
+              <input type="number" inputMode="decimal" step="0.01" value={form.fxToUsd}
+                onChange={e => set('fxToUsd', e.target.value)} placeholder={form.currency === 'GBP' ? '1.28' : '1.00'} />
+              <span className="small muted" style={{ display: 'block', marginTop: 3 }}>
+                Yours to set and revisit — this app makes no network calls. Without a rate the balance counts as $0 in net worth, never {form.currency} mistaken for dollars.
+              </span>
+            </label>
+          )}
           <label className="span-2 check-pill" style={{ justifySelf: 'start' }}>
             <input
               type="checkbox"
@@ -182,7 +210,18 @@ export default function Accounts() {
                     {!a.excludeFromNetWorth && a.bucket && <span className="badge" style={{ marginLeft: 6 }} title="Pinned to this net-worth bucket from the Overview — the account type no longer decides">counts as {a.bucket}</span>}
                   </td>
                   <td>{a.type}</td>
-                  <td className="num">{fmtCents(a.balance)}</td>
+                  <td className="num">
+                    {(a.currency || 'USD') === 'USD' ? fmtCents(a.balance) : (
+                      Number(a.fxToUsd) > 0
+                        ? <>
+                            {fmtCents((parseFloat(a.balance) || 0) * Number(a.fxToUsd))}
+                            <span className="small muted"> · {CUR_SYMBOL[a.currency] || a.currency}{(parseFloat(a.balance) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </>
+                        : <span style={{ color: 'var(--warning-text)' }} title="Set an exchange rate on this account — until then it counts as $0 in net worth">
+                            {CUR_SYMBOL[a.currency] || a.currency}{(parseFloat(a.balance) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · needs rate
+                          </span>
+                    )}
+                  </td>
                   <td className="small">{a.updated}</td>
                   <td className="row-actions">
                     <button className="btn ghost small" onClick={() => edit(a)}>Edit</button>
@@ -200,7 +239,7 @@ export default function Accounts() {
               <tr>
                 <td>Subtotal</td>
                 <td></td>
-                <td className="num">{fmtCents(accts.reduce((s, a) => s + (parseFloat(a.balance) || 0), 0))}</td>
+                <td className="num">{fmtCents(accts.reduce((s, a) => s + usdBalance(a).usd, 0))}</td>
                 <td></td>
                 <td></td>
               </tr>

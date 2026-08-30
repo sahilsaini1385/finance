@@ -51,11 +51,25 @@ export function accountBucket(a) {
   return 'other'
 }
 
+// Balance in USD. A foreign-currency account converts at its typed rate —
+// same rule as foreign pensions: no rate means the balance contributes $0
+// (never pounds counted as dollars), and the caller is told via needsFx.
+export function usdBalance(a) {
+  const b = num(a.balance)
+  const cur = String(a.currency || 'USD').toUpperCase()
+  if (cur === 'USD') return { usd: b, needsFx: false }
+  const fx = num(a.fxToUsd)
+  return fx > 0 ? { usd: b * fx, needsFx: false } : { usd: 0, needsFx: true }
+}
+
 export function computeTotals(state) {
   let cash = 0, taxableInvest = 0, retirementInvest = 0, debt = 0, other = 0, excluded = 0
+  let fxMissing = 0
   let hasMortgageAccount = false
   for (const a of state.accounts) {
-    const b = num(a.balance)
+    const conv = usdBalance(a)
+    if (conv.needsFx) fxMissing++
+    const b = conv.usd
     const bucket = accountBucket(a)
     if (a.excludeFromNetWorth) {
       excluded += bucket === 'debt' ? -Math.abs(b) : b
@@ -91,6 +105,7 @@ export function computeTotals(state) {
     taxableInvest,
     homeValue, homeEquity,
     propertyValue, propertyDebt, propertyEquity,
+    fxMissing, // foreign-currency accounts contributing $0 until a rate is set
     propertyCount: (state.properties || []).filter(p => num(p.currentValue) > 0).length,
     accountsNet, // the old accounts-only figure
     netWorth: accountsNet + homeEquity + propertyEquity,
