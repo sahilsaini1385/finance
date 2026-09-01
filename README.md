@@ -2,6 +2,9 @@
 
 > Named after the world's cheapest bird. Mascot is a beagle. We know.
 
+[![Tests](https://github.com/sahilsaini1385/finance/actions/workflows/test.yml/badge.svg)](https://github.com/sahilsaini1385/finance/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A free, private, in-browser personal finance tool. Track accounts across **Fidelity, Chase, and Bank of America**, import transactions from their CSV exports, log employer **benefits** and **insurance** policies, and get rules-based guidance on **tax management** and **how much insurance you actually need**.
 
 **Your data lives in your browser.** Everything is stored in `localStorage` — no server, no signup, no cost. To be precise about the optional integrations: bank sync talks to SimpleFIN (directly when possible, else via a stateless CORS proxy on your own deployment), the AI advisor talks to Anthropic with **your** key (directly, via your deployment's stateless proxy, or via a loopback bridge on your machine), and family sync stores an **end-to-end-encrypted** blob in **your own** Supabase project. No proxy stores anything, and nothing readable ever reaches infrastructure the app's author controls.
@@ -68,9 +71,19 @@ Import takes about a minute per account per month; duplicate rows are detected a
 
 **Prefer automatic sync?** The Connect tab wires up [SimpleFIN Bridge](https://beta-bridge.simplefin.org/) (~$1.50/mo): connect your banks once on their site, generate a setup token, paste it into the app, and sync with one click. Duplicates are skipped using SimpleFIN's stable transaction IDs, so CSV and sync can coexist.
 
+## Contributing
+
+Issues and pull requests are welcome — read [CONTRIBUTING.md](CONTRIBUTING.md) first. It covers the rules that shape this codebase (local-first, never guess at a number, label every estimate) and the one hard rule: **never put real financial data in an issue, a fixture, or a screenshot.** Use the synthetic household in `tests/ui/seed.html`.
+
+Security issues go through [private vulnerability reporting](SECURITY.md), not public issues.
+
+## License
+
+[MIT](LICENSE). Use it, fork it, run it for your own household — the tool is only useful if the data stays yours, and that stays true in your copy too.
+
 ## Disclaimer
 
-The Advisor provides educational, rules-based guidance using announced IRS limits (update `src/lib/advisor.js` annually; verify at [irs.gov](https://www.irs.gov)). It is not tax, legal, or investment advice — confirm decisions with a CPA or fee-only fiduciary advisor.
+The Advisor provides educational, rules-based guidance using announced IRS limits (update `src/lib/taxTables.js` annually; verify at [irs.gov](https://www.irs.gov)). It is **not tax, legal, or investment advice** — confirm decisions with a CPA or fee-only fiduciary advisor. Every projection in the app is an estimate built from the data you enter, and states its assumptions on screen; none of it is a substitute for your actual tax return, plan documents, or account statements.
 
 ## Testing
 
