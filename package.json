@@ -1,7 +1,6 @@
 {
-  "name": "budgie",
-  "license": "MIT",
-  "description": "A free, private, local-first personal finance manager that runs entirely in your browser.",
+  "name": "finance",
+  "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
